@@ -165,6 +165,17 @@ raw_materials = [
     {"id": "oil", "name": "Oil", "quantity": 20, "unit": "litres"},
 ]
 
+# Give every seeded dish a usable serving inventory.  Limited dishes start
+# with a smaller batch and unavailable dishes start at zero; all other dishes
+# can serve the full default batch.
+for item in menu_items:
+    item["max_stock"] = 100
+    item["stock"] = 0 if not item["is_available"] else (25 if item["status"] == "limited" else 100)
+    item["availability"] = item["status"]
+    item["unit"] = "servings"
+    item["wastage"] = 0
+    item["inventory_mode"] = "dish_stock"
+
 # Replace only disposable RTDB menu and material records to prevent duplicates.
 old_docs = list(db.collection("menu_items").stream())
 for doc in old_docs:

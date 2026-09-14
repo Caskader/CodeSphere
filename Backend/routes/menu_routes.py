@@ -157,12 +157,26 @@ def load_inventory_defaults():
         item = doc.to_dict()
         normalized_name = str(item.get("name", "")).strip().lower()
         recipe = DEFAULT_RECIPES.get(normalized_name)
+        updates = {}
         if recipe and not item.get("ingredients"):
-            doc.reference.update({
+            updates.update({
                 "ingredients": [{"material_id": material_id, "name": name, "quantity": quantity} for material_id, name, quantity in recipe],
                 "inventory_mode": "ingredients",
-                "updated_at": firestore.SERVER_TIMESTAMP,
             })
+        # Older seeded records did not include dish inventory. Add a safe
+        # default without overwriting an existing stock count.
+        if "stock" not in item:
+            status = str(item.get("status", "available")).lower()
+            updates["stock"] = 0 if item.get("is_available") is False or status == "unavailable" else (25 if status == "limited" else 100)
+        if not item.get("max_stock"):
+            updates["max_stock"] = 100
+        if "availability" not in item:
+            updates["availability"] = item.get("status", "available")
+        if "unit" not in item:
+            updates["unit"] = "servings"
+        if updates:
+            updates["updated_at"] = firestore.SERVER_TIMESTAMP
+            doc.reference.update(updates)
             updated_dishes += 1
     return jsonify({"message": "Default inventory loaded", "updated_dishes": updated_dishes}), 200
 

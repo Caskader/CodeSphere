@@ -144,6 +144,7 @@ export interface AppState {
 
 type Action =
   | { type: "SET_ORDERS"; orders: Order[] }
+  | { type: "SET_FOOD_ITEMS"; foodItems: FoodItem[] }
   | { type: "SET_ANNOUNCEMENTS"; announcements: Announcement[] }
   | { type: "ACCEPT_ORDER"; orderId: string }
   | { type: "REJECT_ORDER"; orderId: string; reason: string }
@@ -340,6 +341,8 @@ function reducer(state: AppState, action: Action): AppState {
     }
     case "SET_ANNOUNCEMENTS":
       return { ...state, announcements: action.announcements };
+    case "SET_FOOD_ITEMS":
+      return { ...state, foodItems: action.foodItems };
     case "ACCEPT_ORDER": {
       const order = state.orders.find((o) => o.id === action.orderId);
       if (!order) return state;
@@ -527,7 +530,12 @@ function reducer(state: AppState, action: Action): AppState {
 }
 
 const STORAGE_KEY = "night-mess-admin-v1";
-const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
+// Keep the API on the same host as the Admin UI when it is opened from another
+// device. A hard-coded localhost points back to the browser's device, not the
+// machine running Flask. Set VITE_API_URL explicitly for hosted deployments.
+const API_BASE = import.meta.env.VITE_API_URL || (
+  typeof window !== "undefined" ? `http://${window.location.hostname}:5000/api` : "http://localhost:5000/api"
+);
 // Set VITE_ADMIN_TOKEN in .env for deployments instead of using the demo token.
 const ADMIN_TOKEN = import.meta.env.VITE_ADMIN_TOKEN || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1aWQiOiJhZG1pbiIsImVtYWlsIjoiYWRtaW5Adml0LmFjLmluIiwiaXNfYWRtaW4iOnRydWUsIm5hbWUiOiJBZG1pbiIsImV4cCI6MTgyMDkyNTM1MX0.bSafq0-bKWIsnzoO40t_nA1BELUzt99cuWuxfvbzzQY";
 
@@ -543,6 +551,7 @@ interface StoreContextValue {
   state: AppState;
   dispatch: React.Dispatch<Action>;
   createFoodItem: (food: Omit<FoodItem, "id">) => Promise<boolean>;
+  loadFoodItems: () => Promise<boolean>;
   createRawMaterial: (material: Omit<RawMaterial, "id">) => Promise<boolean>;
   loadInventoryDefaults: () => Promise<boolean>;
   loadAnnouncements: () => Promise<boolean>;
@@ -587,6 +596,35 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       return true;
     } catch (err) {
       console.error("Failed to create menu item", err);
+      return false;
+    }
+  };
+
+  const loadFoodItems = async (): Promise<boolean> => {
+    try {
+      const res = await fetch(`${API_BASE}/menu`);
+      if (!res.ok) return false;
+      const data = await res.json();
+      dispatch({ type: "SET_FOOD_ITEMS", foodItems: data.map((item: any) => ({
+        id: item.id,
+        name: item.name,
+        category: item.category || "Main Course",
+        stock: Number(item.stock || 0),
+        maxStock: Number(item.max_stock ?? item.maxStock ?? 100),
+        availability: item.is_available === false ? "unavailable" : (item.availability || item.status || "available"),
+        price: Number(item.price || 0),
+        wastage: Number(item.wastage || 0),
+        unit: item.unit || "servings",
+        inventoryMode: item.inventory_mode || item.inventoryMode || (item.ingredients?.length ? "ingredients" : "dish_stock"),
+        ingredients: (item.ingredients || []).map((ingredient: any) => ({
+          materialId: ingredient.material_id || ingredient.materialId,
+          name: ingredient.name,
+          quantity: Number(ingredient.quantity || 0),
+        })),
+      })) });
+      return true;
+    } catch (err) {
+      console.error("Failed to fetch menu items", err);
       return false;
     }
   };
@@ -721,6 +759,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   };
 
   useEffect(() => {
+    void loadFoodItems();
+  }, []);
+
+  useEffect(() => {
     const fetchRawMaterials = async () => {
       try {
         const res = await fetch(`${API_BASE}/menu/inventory`, { headers: { Authorization: `Bearer ${ADMIN_TOKEN}` } });
@@ -853,7 +895,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <StoreContext.Provider value={{ state, dispatch, createFoodItem, createRawMaterial, loadInventoryDefaults, loadAnnouncements, saveAnnouncement, setAnnouncementPublished, deleteAnnouncement, createUser, getDemandForecast, updateOrderStatus, verifyQR, sendNotification }}>
+    <StoreContext.Provider value={{ state, dispatch, createFoodItem, loadFoodItems, createRawMaterial, loadInventoryDefaults, loadAnnouncements, saveAnnouncement, setAnnouncementPublished, deleteAnnouncement, createUser, getDemandForecast, updateOrderStatus, verifyQR, sendNotification }}>
       {children}
     </StoreContext.Provider>
   );
