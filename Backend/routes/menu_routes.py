@@ -60,6 +60,13 @@ def add_menu_item():
         "category": data["category"],
         "is_available": data.get("is_available", True),
         "image_url": data.get("image_url", ""),
+        # Admin-dashboard inventory fields. They are optional so existing
+        # student-facing menu clients remain compatible.
+        "stock": data.get("stock", 0),
+        "max_stock": data.get("maxStock", data.get("max_stock", 0)),
+        "availability": data.get("availability", "available"),
+        "unit": data.get("unit", "servings"),
+        "wastage": data.get("wastage", 0),
         "created_at": firestore.SERVER_TIMESTAMP,
         "updated_at": firestore.SERVER_TIMESTAMP,
     }

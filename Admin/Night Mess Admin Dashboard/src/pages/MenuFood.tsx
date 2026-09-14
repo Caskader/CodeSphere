@@ -14,7 +14,7 @@ function FoodModal({
   open: boolean;
   onClose: () => void;
   initial?: FoodItem;
-  onSave: (food: Omit<FoodItem, "id">) => void;
+  onSave: (food: Omit<FoodItem, "id">) => Promise<boolean>;
 }) {
   const blank: Omit<FoodItem, "id"> = {
     name: "", category: "Main Course", stock: 0, maxStock: 100,
@@ -24,10 +24,10 @@ function FoodModal({
 
   const set = (k: keyof typeof form, v: any) => setForm((f) => ({ ...f, [k]: v }));
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!form.name.trim()) return;
-    onSave({ ...form, stock: Number(form.stock), maxStock: Number(form.maxStock), price: Number(form.price), wastage: Number(form.wastage) });
-    onClose();
+    const saved = await onSave({ ...form, stock: Number(form.stock), maxStock: Number(form.maxStock), price: Number(form.price), wastage: Number(form.wastage) });
+    if (saved) onClose();
   };
 
   return (
@@ -59,13 +59,14 @@ function FoodModal({
 }
 
 export default function MenuFood() {
-  const { state, dispatch } = useStore();
+  const { state, dispatch, createFoodItem } = useStore();
   const [search, setSearch] = useState("");
   const [filterCat, setFilterCat] = useState("All");
   const [filterAvail, setFilterAvail] = useState("All");
   const [modalOpen, setModalOpen] = useState(false);
   const [editItem, setEditItem] = useState<FoodItem | undefined>();
   const [stockEdit, setStockEdit] = useState<Record<string, string>>({});
+  const [actionError, setActionError] = useState("");
 
   const allCategories = ["All", ...Array.from(new Set(state.foodItems.map((f) => f.category)))];
 
@@ -83,9 +84,15 @@ export default function MenuFood() {
   const openAdd = () => { setEditItem(undefined); setModalOpen(true); };
   const openEdit = (f: FoodItem) => { setEditItem(f); setModalOpen(true); };
 
-  const handleSave = (food: Omit<FoodItem, "id">) => {
-    if (editItem) dispatch({ type: "EDIT_FOOD", food: { ...food, id: editItem.id } });
-    else dispatch({ type: "ADD_FOOD", food });
+  const handleSave = async (food: Omit<FoodItem, "id">) => {
+    setActionError("");
+    if (editItem) {
+      dispatch({ type: "EDIT_FOOD", food: { ...food, id: editItem.id } });
+      return true;
+    }
+    const created = await createFoodItem(food);
+    if (!created) setActionError("Could not add the dish to the database. Check that the backend is running and the admin token is valid.");
+    return created;
   };
 
   const handleDelete = (foodId: string) => {
@@ -109,6 +116,8 @@ export default function MenuFood() {
           <span className="flex items-center gap-1.5"><Plus size={12} /> Add Item</span>
         </Button>
       </PageHeader>
+
+      {actionError && <div className="rounded-md border border-[#ff3d7133] bg-[#ff3d7114] px-3 py-2 text-xs text-[#ff7899]">{actionError}</div>}
 
       <div className="grid grid-cols-3 gap-3">
         <StatCard label="Total Items" value={totalItems} accent="cyan" icon={<Package size={16} />} />
@@ -223,6 +232,7 @@ export default function MenuFood() {
       )}
 
       <FoodModal
+        key={editItem?.id || "new-food-item"}
         open={modalOpen}
         onClose={() => setModalOpen(false)}
         initial={editItem}

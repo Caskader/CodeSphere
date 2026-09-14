@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useStore, Order, MealType } from "../store";
+import { useStore, Order } from "../store";
 import { Card, Badge, Button, PageHeader, Input, Select, StatCard, Modal } from "../components/ui";
 import { ClipboardList, CheckCircle, XCircle, Clock, Package } from "lucide-react";
 
@@ -9,8 +9,63 @@ const statusVariant = (s: Order["status"]) =>
 const payVariant = (s: Order["paymentStatus"]) =>
   s === "paid" ? "success" : s === "unpaid" ? "danger" : "muted";
 
+type OrderRow = { orders: Order[]; firstIndex: number };
+
+function parseOrderItem(item: string) {
+  const match = item.trim().match(/^(.*?)(?:\s+x(\d+))?$/i);
+  return {
+    name: (match?.[1] || item).trim(),
+    quantity: Number(match?.[2] || 1),
+  };
+}
+
+function batchItemsLabel(orders: Order[]) {
+  const totals = new Map<string, { name: string; quantity: number }>();
+  orders.flatMap((order) => order.items).forEach((item) => {
+    const { name, quantity } = parseOrderItem(item);
+    const key = name.toLowerCase();
+    const total = totals.get(key) || { name, quantity: 0 };
+    total.quantity += quantity;
+    totals.set(key, total);
+  });
+  return [...totals.values()].map(({ name, quantity }) => `${name} x${quantity}`).join(", ");
+}
+
+// A batch must contain the same dishes, but each order may request a different
+// quantity. This lets sandwich x1 and sandwich x2 be prepared together while
+// keeping a sandwich-and-burger order separate from a sandwich-only batch.
+function createPreparationRows(orders: Order[]): OrderRow[] {
+  const buckets = new Map<string, OrderRow>();
+
+  orders.forEach((order, index) => {
+    const itemSignature = order.items.map((item) => parseOrderItem(item).name.toLowerCase()).sort().join("|");
+    const canBatch = order.status === "pending" || order.status === "accepted";
+    const key = canBatch
+      ? `${order.status}:${order.mealType}:${order.paymentStatus}:${itemSignature}`
+      : `single:${order.id}`;
+    const bucket = buckets.get(key);
+    if (bucket) bucket.orders.push(order);
+    else buckets.set(key, { orders: [order], firstIndex: index });
+  });
+
+  return [...buckets.values()]
+    .flatMap(({ orders: bucketOrders, firstIndex }) => {
+      const rows: OrderRow[] = [];
+      let remaining = [...bucketOrders];
+      while (remaining.length >= 3) {
+        // Keep batches between 3 and 4 orders. For five matching orders, make
+        // one batch of three and leave the other two individual.
+        const batchSize = remaining.length === 5 ? 3 : 4;
+        rows.push({ orders: remaining.slice(0, batchSize), firstIndex });
+        remaining = remaining.slice(batchSize);
+      }
+      return [...rows, ...remaining.map((order, offset) => ({ orders: [order], firstIndex: firstIndex + offset }))];
+    })
+    .sort((a, b) => a.firstIndex - b.firstIndex);
+}
+
 export default function OrdersTokens() {
-  const { state, dispatch } = useStore();
+  const { state, updateOrderStatus } = useStore();
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [mealFilter, setMealFilter] = useState("all");
@@ -18,6 +73,8 @@ export default function OrdersTokens() {
   const [rejectModal, setRejectModal] = useState<{ open: boolean; orderId: string }>({ open: false, orderId: "" });
   const [rejectReason, setRejectReason] = useState("");
   const [detailOrder, setDetailOrder] = useState<Order | null>(null);
+  const [updatingOrderIds, setUpdatingOrderIds] = useState<string[]>([]);
+  const [actionError, setActionError] = useState("");
 
   const filtered = state.orders.filter((o) => {
     const matchSearch =
@@ -37,17 +94,45 @@ export default function OrdersTokens() {
     collected: state.orders.filter((o) => o.status === "collected").length,
     rejected: state.orders.filter((o) => o.status === "rejected").length,
   };
+  const preparationRows = createPreparationRows(filtered);
 
-  const doReject = () => {
+  const changeOrderStatuses = async (
+    orders: Order[],
+    status: "preparing" | "completed" | "cancelled",
+    rejectionReason?: string,
+  ) => {
+    setActionError("");
+    setUpdatingOrderIds(orders.map((order) => order.id));
+    const results = await Promise.all(orders.map((order) => updateOrderStatus(order.id, status, rejectionReason)));
+    setUpdatingOrderIds([]);
+    if (results.some((updated) => !updated)) {
+      setActionError("Some orders could not be updated. Please check that the backend is running and you are signed in as an admin.");
+    }
+    return results.every(Boolean);
+  };
+
+  const changeOrderStatus = async (
+    orderId: string,
+    status: "preparing" | "completed" | "cancelled",
+    rejectionReason?: string,
+  ) => {
+    const order = state.orders.find((candidate) => candidate.id === orderId);
+    return order ? changeOrderStatuses([order], status, rejectionReason) : false;
+  };
+
+  const doReject = async () => {
     if (!rejectReason.trim()) return;
-    dispatch({ type: "REJECT_ORDER", orderId: rejectModal.orderId, reason: rejectReason });
-    setRejectModal({ open: false, orderId: "" });
-    setRejectReason("");
+    if (await changeOrderStatus(rejectModal.orderId, "cancelled", rejectReason)) {
+      setRejectModal({ open: false, orderId: "" });
+      setRejectReason("");
+    }
   };
 
   return (
     <div className="space-y-5 animate-fade-up">
       <PageHeader title="Orders & Tokens" subtitle="Manage student meal orders and token lifecycle" />
+
+      {actionError && <div className="rounded-md border border-[#ff3d7133] bg-[#ff3d7114] px-3 py-2 text-xs text-[#ff7899]">{actionError}</div>}
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <StatCard label="Pending" value={counts.pending} accent={counts.pending > 3 ? "red" : "yellow"} icon={<Clock size={16} />} />
@@ -97,23 +182,34 @@ export default function OrdersTokens() {
               </tr>
             </thead>
             <tbody className="divide-y divide-[#1a254020]">
-              {filtered.map((order) => (
-                <tr key={order.id} className="hover:bg-[#1a254010] transition-colors">
+              {preparationRows.map(({ orders }) => {
+                const order = orders[0];
+                const isBatch = orders.length > 1;
+                const isUpdating = orders.some((batchOrder) => updatingOrderIds.includes(batchOrder.id));
+                return (
+                <tr key={orders.map((batchOrder) => batchOrder.id).join("-")} className="hover:bg-[#1a254010] transition-colors">
                   <td className="py-2.5 px-2">
-                    <button onClick={() => setDetailOrder(order)} className="text-[#00c8ff] mono text-[10px] hover:underline">{order.tokenId}</button>
+                    {isBatch ? (
+                      <div>
+                        <div className="text-[#00c8ff] mono text-[10px]">PREP BATCH ×{orders.length}</div>
+                        <div className="text-[9px] text-[#5a7099] mono">{orders.map((batchOrder) => batchOrder.tokenId).join(", ")}</div>
+                      </div>
+                    ) : (
+                      <button onClick={() => setDetailOrder(order)} className="text-[#00c8ff] mono text-[10px] hover:underline">{order.tokenId}</button>
+                    )}
                   </td>
                   <td className="py-2.5 px-2">
-                    <div className="text-[#dce6f5] font-medium truncate max-w-[120px]">{order.studentName}</div>
-                    <div className="text-[9px] text-[#5a7099] mono">{order.studentId}</div>
+                    <div className="text-[#dce6f5] font-medium truncate max-w-[120px]">{isBatch ? `${orders.length} matching orders` : order.studentName}</div>
+                    <div className="text-[9px] text-[#5a7099] mono">{isBatch ? orders.map((batchOrder) => batchOrder.studentId).join(", ") : order.studentId}</div>
                   </td>
                   <td className="py-2.5 px-2">
                     <span className="capitalize text-[#a0b4cc]">{order.mealType}</span>
                   </td>
                   <td className="py-2.5 px-2">
-                    <div className="text-[#5a7099] truncate max-w-[140px]">{order.items.join(", ")}</div>
+                    <div className="text-[#5a7099] truncate max-w-[140px]">{isBatch ? batchItemsLabel(orders) : order.items.join(", ")}</div>
                   </td>
                   <td className="py-2.5 px-2">
-                    <span className="mono text-[#a0b4cc]">₹{order.amount}</span>
+                    <span className="mono text-[#a0b4cc]">₹{orders.reduce((total, batchOrder) => total + batchOrder.amount, 0)}</span>
                   </td>
                   <td className="py-2.5 px-2">
                     <Badge variant={payVariant(order.paymentStatus)} size="xs">{order.paymentStatus.toUpperCase()}</Badge>
@@ -128,27 +224,30 @@ export default function OrdersTokens() {
                           <Button
                             variant="success"
                             size="xs"
-                            onClick={() => dispatch({ type: "ACCEPT_ORDER", orderId: order.id })}
-                            disabled={order.paymentStatus === "unpaid"}
+                            onClick={() => changeOrderStatuses(orders, "preparing")}
+                            disabled={order.paymentStatus === "unpaid" || isUpdating}
                           >
-                            Accept
+                            {isBatch ? `Accept ${orders.length}` : "Accept"}
                           </Button>
-                          <Button
-                            variant="danger"
-                            size="xs"
-                            onClick={() => setRejectModal({ open: true, orderId: order.id })}
-                          >
-                            Reject
-                          </Button>
+                          {!isBatch && (
+                            <Button
+                              variant="danger"
+                              size="xs"
+                              onClick={() => setRejectModal({ open: true, orderId: order.id })}
+                            >
+                              Reject
+                            </Button>
+                          )}
                         </>
                       )}
                       {order.status === "accepted" && (
                         <Button
                           variant="primary"
                           size="xs"
-                          onClick={() => dispatch({ type: "MARK_COLLECTED", orderId: order.id })}
+                          onClick={() => changeOrderStatuses(orders, "completed")}
+                          disabled={isUpdating}
                         >
-                          Mark Collected
+                          {isBatch ? `Collect ${orders.length}` : "Mark Collected"}
                         </Button>
                       )}
                       {(order.status === "collected" || order.status === "rejected") && (
@@ -161,7 +260,8 @@ export default function OrdersTokens() {
                     </div>
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
           {filtered.length === 0 && (
@@ -185,7 +285,7 @@ export default function OrdersTokens() {
             onChange={(e) => setRejectReason(e.target.value)}
           />
           <div className="flex gap-2">
-            <Button variant="danger" size="sm" onClick={doReject} disabled={!rejectReason.trim()} className="flex-1">Reject Order</Button>
+            <Button variant="danger" size="sm" onClick={doReject} disabled={!rejectReason.trim() || updatingOrderIds.includes(rejectModal.orderId)} className="flex-1">Reject Order</Button>
             <Button variant="ghost" size="sm" onClick={() => setRejectModal({ open: false, orderId: "" })}>Cancel</Button>
           </div>
         </div>
