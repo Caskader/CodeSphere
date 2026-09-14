@@ -1,0 +1,10 @@
+{
+  "description": "Manage mess operations efficiently with a comprehensive admin dashboard featuring live analytics, order processing, and real-time updates for optimal performance.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}
