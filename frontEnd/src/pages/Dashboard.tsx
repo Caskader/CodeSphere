@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useApp } from "../context/AppContext";
-import { STUDENT, TODAY_MENU_HIGHLIGHTS, ANNOUNCEMENTS } from "../data/mockData";
+import { STUDENT, ANNOUNCEMENTS } from "../data/mockData";
 
 const CROWD_CONFIG = {
   low: { label: "Low", color: "#22C55E", bg: "rgba(34,197,94,0.12)", bar: 20 },
@@ -26,7 +26,12 @@ function StatCard({ title, value, sub, accent }: { title: string; value: string;
 }
 
 export default function Dashboard() {
-  const { queueCount, messOpen, waitTime, crowdLevel, recommendation, recommendedLeaveIn, setActivePage } = useApp();
+  const {
+    queueCount, waitTime, crowdLevel,
+    recommendation, recommendedLeaveIn,
+    setActivePage, menuItems, activeToken, userProfile
+  } = useApp();
+
   const [now, setNow] = useState(new Date());
 
   useEffect(() => {
@@ -48,6 +53,18 @@ export default function Dashboard() {
     ? `Leave in ~${recommendedLeaveIn} min for a shorter queue.`
     : "Very crowded right now. Recommended to wait it out.";
 
+  const studentName = userProfile?.name || STUDENT.name;
+  const studentId = userProfile?.student_id || STUDENT.id;
+  const studentBranch = userProfile?.branch || STUDENT.branch;
+
+  // Live Highlights from backend menu
+  const highlights = menuItems.slice(0, 4).map(item => ({
+    emoji: item.emoji,
+    name: item.name,
+    price: item.price,
+    note: item.status === "limited" ? "Limited" : item.status === "unavailable" ? "Sold Out" : `₹${item.price}`,
+  }));
+
   return (
     <div className="animate-slide-up space-y-6">
 
@@ -56,18 +73,46 @@ export default function Dashboard() {
         <div>
           <div className="text-xs font-medium mb-1" style={{ color: "rgba(255,255,255,0.4)" }}>{dateStr}</div>
           <h1 className="text-2xl font-bold text-white">
-            Good {now.getHours() < 12 ? "Morning" : now.getHours() < 17 ? "Afternoon" : "Evening"}, {STUDENT.name.split(" ")[0]} 👋
+            Good {now.getHours() < 12 ? "Morning" : now.getHours() < 17 ? "Afternoon" : "Evening"}, {studentName.split(" ")[0]} 👋
           </h1>
-          <div className="text-sm mt-0.5" style={{ color: "rgba(255,255,255,0.4)" }}>{STUDENT.id} · {STUDENT.branch}</div>
+          <div className="text-sm mt-0.5" style={{ color: "rgba(255,255,255,0.4)" }}>{studentId} · {studentBranch}</div>
         </div>
         <div className="text-right">
           <div className="text-2xl font-bold" style={{ fontFamily: "JetBrains Mono, monospace", color: "#E8EAF0" }}>{timeStr}</div>
           <div className="flex items-center gap-1.5 justify-end mt-1">
-            <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse-glow" />
+            <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
             <span className="text-xs font-semibold text-green-400">MESS OPEN</span>
           </div>
         </div>
       </div>
+
+      {/* Active Order Banner if token exists */}
+      {activeToken && activeToken.status !== "cancelled" && (
+        <div
+          onClick={() => setActivePage("token")}
+          className="rounded-2xl p-4 flex items-center justify-between cursor-pointer transition-transform hover:scale-[1.01]"
+          style={{ background: "linear-gradient(135deg, rgba(249,115,22,0.2), rgba(234,88,12,0.1))", border: "1px solid rgba(249,115,22,0.3)" }}
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl flex items-center justify-center text-xl" style={{ background: "rgba(249,115,22,0.2)" }}>
+              🎫
+            </div>
+            <div>
+              <div className="text-sm font-bold text-white flex items-center gap-2">
+                <span>Active Meal Token: {activeToken.id}</span>
+                <span className="text-[10px] px-2 py-0.5 rounded-full uppercase tracking-wider font-bold"
+                  style={{ background: "#F97316", color: "white" }}>
+                  Counter #{activeToken.counter}
+                </span>
+              </div>
+              <div className="text-xs text-orange-200/70 mt-0.5">
+                {activeToken.items.length} item{activeToken.items.length > 1 ? "s" : ""} · ₹{activeToken.amount} · Tap to show QR code
+              </div>
+            </div>
+          </div>
+          <span className="text-sm font-bold text-orange-400">View →</span>
+        </div>
+      )}
 
       {/* Stats Row */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -123,13 +168,13 @@ export default function Dashboard() {
         <div className="px-5 py-3 flex gap-3" style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }}>
           <button
             onClick={() => setActivePage("queue")}
-            className="text-xs font-semibold px-4 py-2 rounded-lg transition-all"
+            className="text-xs font-semibold px-4 py-2 rounded-lg transition-all cursor-pointer"
             style={{ background: rec.color, color: "white" }}>
             View Full Queue
           </button>
           <button
             onClick={() => setActivePage("menu")}
-            className="text-xs font-semibold px-4 py-2 rounded-lg transition-all"
+            className="text-xs font-semibold px-4 py-2 rounded-lg transition-all cursor-pointer"
             style={{ background: "rgba(255,255,255,0.08)", color: "rgba(255,255,255,0.8)" }}>
             Order Now
           </button>
@@ -139,16 +184,16 @@ export default function Dashboard() {
       {/* Today's Menu Highlights + Announcements */}
       <div className="grid md:grid-cols-2 gap-4">
 
-        {/* Menu Highlights */}
+        {/* Menu Highlights from Live Backend */}
         <div className="glass-card rounded-2xl p-5">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-sm font-semibold text-white">Tonight's Highlights</h2>
-            <button onClick={() => setActivePage("menu")} className="text-xs font-medium" style={{ color: "#F97316" }}>
+            <button onClick={() => setActivePage("menu")} className="text-xs font-medium cursor-pointer" style={{ color: "#F97316" }}>
               Full menu →
             </button>
           </div>
           <div className="space-y-2.5">
-            {TODAY_MENU_HIGHLIGHTS.map((item, i) => (
+            {highlights.map((item, i) => (
               <div key={i} className="flex items-center gap-3">
                 <span className="text-2xl">{item.emoji}</span>
                 <div className="flex-1">
@@ -170,14 +215,13 @@ export default function Dashboard() {
         <div className="glass-card rounded-2xl p-5">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-sm font-semibold text-white">Latest Notices</h2>
-            <button onClick={() => setActivePage("announcements")} className="text-xs font-medium" style={{ color: "#F97316" }}>
+            <button onClick={() => setActivePage("announcements")} className="text-xs font-medium cursor-pointer" style={{ color: "#F97316" }}>
               All →
             </button>
           </div>
           <div className="space-y-3">
             {ANNOUNCEMENTS.slice(0, 3).map(ann => {
               const typeColor = ann.type === "warning" ? "#EAB308" : ann.type === "alert" ? "#EF4444" : ann.type === "success" ? "#22C55E" : "#6366F1";
-              const typeBg = ann.type === "warning" ? "rgba(234,179,8,0.1)" : ann.type === "alert" ? "rgba(239,68,68,0.1)" : ann.type === "success" ? "rgba(34,197,94,0.1)" : "rgba(99,102,241,0.1)";
               return (
                 <div key={ann.id} className="flex gap-2.5">
                   <div className="w-1 rounded-full flex-shrink-0 mt-1" style={{ height: "calc(100% - 4px)", background: typeColor, minHeight: 32 }} />
@@ -199,12 +243,14 @@ export default function Dashboard() {
       <div className="glass-card rounded-2xl p-5 flex items-center justify-between">
         <div>
           <div className="text-xs font-medium mb-1 uppercase tracking-widest" style={{ color: "rgba(255,255,255,0.4)" }}>Mess Wallet</div>
-          <div className="text-2xl font-bold text-white">₹{STUDENT.messBalance.toLocaleString("en-IN")}</div>
+          <div className="text-2xl font-bold text-white">₹{(userProfile?.mess_balance ?? STUDENT.messBalance).toLocaleString("en-IN")}</div>
           <div className="text-xs mt-0.5" style={{ color: "rgba(255,255,255,0.4)" }}>Available balance</div>
         </div>
-        <button className="px-4 py-2 rounded-xl text-sm font-semibold"
+        <button
+          onClick={() => setActivePage("menu")}
+          className="px-4 py-2 rounded-xl text-sm font-semibold cursor-pointer"
           style={{ background: "linear-gradient(135deg, #F97316, #EA580C)", color: "white" }}>
-          Top Up
+          Order Food
         </button>
       </div>
     </div>

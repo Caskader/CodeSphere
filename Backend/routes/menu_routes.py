@@ -27,7 +27,7 @@ def get_menu():
     available_only = request.args.get("available_only", "false").lower() == "true"
 
     query = db.collection("menu_items")
-    if category:
+    if category and category.lower() != "all":
         query = query.where("category", "==", category)
     if available_only:
         query = query.where("is_available", "==", True)

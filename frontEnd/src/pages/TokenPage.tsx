@@ -1,10 +1,11 @@
-import React from "react";
+import React, { useState } from "react";
 import { useApp } from "../context/AppContext";
 import QRCodeDisplay from "../components/QRCodeDisplay";
 import { STUDENT } from "../data/mockData";
 
 export default function TokenPage() {
-  const { activeToken, setActivePage, orders } = useApp();
+  const { activeToken, setActivePage, orders, refreshOrders, cancelOrder } = useApp();
+  const [cancelling, setCancelling] = useState(false);
 
   if (!activeToken) {
     return (
@@ -18,13 +19,13 @@ export default function TokenPage() {
         </div>
         <button
           onClick={() => setActivePage("menu")}
-          className="mt-2 px-6 py-3 rounded-xl font-semibold text-white"
+          className="mt-2 px-6 py-3 rounded-xl font-semibold text-white cursor-pointer"
           style={{ background: "linear-gradient(135deg, #F97316, #EA580C)" }}>
           Order Now →
         </button>
         {orders.length > 0 && (
           <button onClick={() => setActivePage("history")}
-            className="text-sm font-medium" style={{ color: "rgba(255,255,255,0.4)" }}>
+            className="text-sm font-medium cursor-pointer" style={{ color: "rgba(255,255,255,0.4)" }}>
             View Past Orders
           </button>
         )}
@@ -39,18 +40,76 @@ export default function TokenPage() {
   const isExpired = now > expiresAt;
   const minsLeft = Math.max(0, Math.round((expiresAt.getTime() - now.getTime()) / 60000));
 
+  // Find matching order in orders list for real-time status
+  const matchedOrder = token.orderId ? orders.find(o => o.id === token.orderId) : null;
+  const currentStatus = (matchedOrder?.status || token.status || "placed").toLowerCase();
+  const isCancelled = currentStatus === "cancelled";
+  const isReady = currentStatus === "ready";
+  const isCompleted = currentStatus === "completed" || token.status === "used";
+
+  const handleCancel = async () => {
+    if (!token.orderId) return;
+    if (!confirm("Are you sure you want to cancel this active meal token?")) return;
+    setCancelling(true);
+    try {
+      const res = await cancelOrder(token.orderId);
+      if (!res.success) {
+        alert(res.error || "Could not cancel token");
+      }
+    } finally {
+      setCancelling(false);
+    }
+  };
+
   return (
     <div className="animate-slide-up space-y-5">
-      <div>
-        <h1 className="text-2xl font-bold text-white">My Meal Token</h1>
-        <p className="text-sm mt-0.5" style={{ color: "rgba(255,255,255,0.4)" }}>Present this token at the counter</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-white">My Meal Token</h1>
+          <p className="text-sm mt-0.5" style={{ color: "rgba(255,255,255,0.4)" }}>Present this token at the counter</p>
+        </div>
+        <button
+          onClick={() => refreshOrders()}
+          className="px-3 py-1.5 rounded-xl text-xs font-semibold cursor-pointer"
+          style={{ background: "rgba(255,255,255,0.06)", color: "rgba(255,255,255,0.7)" }}
+        >
+          🔄 Refresh Status
+        </button>
       </div>
+
+      {/* Ready Alert */}
+      {isReady && (
+        <div className="p-4 rounded-2xl flex items-center gap-3 animate-pulse"
+          style={{ background: "rgba(34,197,94,0.15)", border: "1px solid rgba(34,197,94,0.4)" }}>
+          <span className="text-3xl">🎉</span>
+          <div>
+            <div className="text-sm font-bold text-green-400">Order is READY for pickup!</div>
+            <div className="text-xs text-green-300/80">Please show this QR token at Counter #{token.counter}.</div>
+          </div>
+        </div>
+      )}
+
+      {/* Cancelled Alert */}
+      {isCancelled && (
+        <div className="p-4 rounded-2xl flex items-center gap-3"
+          style={{ background: "rgba(239,68,68,0.15)", border: "1px solid rgba(239,68,68,0.4)" }}>
+          <span className="text-3xl">✕</span>
+          <div>
+            <div className="text-sm font-bold text-red-400">Order has been cancelled</div>
+            <div className="text-xs text-red-300/80">This meal token is no longer valid at the counter.</div>
+          </div>
+        </div>
+      )}
 
       {/* Token Card */}
       <div className="rounded-3xl overflow-hidden" style={{
         background: "linear-gradient(145deg, #0E1420, #121929)",
-        border: "1px solid rgba(249,115,22,0.3)",
-        boxShadow: "0 0 48px rgba(249,115,22,0.15), 0 0 1px rgba(249,115,22,0.4)",
+        border: `1px solid ${isCancelled ? "rgba(239,68,68,0.3)" : isReady ? "rgba(34,197,94,0.4)" : "rgba(249,115,22,0.3)"}`,
+        boxShadow: isReady
+          ? "0 0 48px rgba(34,197,94,0.2), 0 0 1px rgba(34,197,94,0.4)"
+          : isCancelled
+          ? "0 0 48px rgba(239,68,68,0.1)"
+          : "0 0 48px rgba(249,115,22,0.15), 0 0 1px rgba(249,115,22,0.4)",
       }}>
         {/* Top strip */}
         <div className="px-6 py-4 flex items-center justify-between"
@@ -59,9 +118,32 @@ export default function TokenPage() {
             <span className="text-lg">🍴</span>
             <span className="text-sm font-bold text-white">VIT Night Mess</span>
           </div>
-          <span className="text-xs font-bold px-2.5 py-1 rounded-full"
-            style={{ background: isExpired ? "rgba(239,68,68,0.2)" : "rgba(34,197,94,0.2)", color: isExpired ? "#EF4444" : "#22C55E" }}>
-            {isExpired ? "EXPIRED" : `ACTIVE · ${minsLeft}m left`}
+          <span className="text-xs font-bold px-2.5 py-1 rounded-full uppercase tracking-wider"
+            style={{
+              background: isCancelled
+                ? "rgba(239,68,68,0.2)"
+                : isReady
+                ? "rgba(34,197,94,0.2)"
+                : isExpired
+                ? "rgba(239,68,68,0.2)"
+                : "rgba(249,115,22,0.2)",
+              color: isCancelled
+                ? "#EF4444"
+                : isReady
+                ? "#22C55E"
+                : isExpired
+                ? "#EF4444"
+                : "#F97316",
+            }}>
+            {isCancelled
+              ? "CANCELLED"
+              : isReady
+              ? "READY FOR PICKUP"
+              : isCompleted
+              ? "COMPLETED"
+              : isExpired
+              ? "EXPIRED"
+              : `ACTIVE · ${minsLeft}m left`}
           </span>
         </div>
 
@@ -70,7 +152,7 @@ export default function TokenPage() {
           {/* Token ID */}
           <div className="text-center mb-6">
             <div className="text-xs font-medium uppercase tracking-widest mb-1" style={{ color: "rgba(255,255,255,0.4)" }}>Token ID</div>
-            <div className="text-2xl font-bold" style={{ fontFamily: "JetBrains Mono, monospace", color: "#F97316" }}>{token.id}</div>
+            <div className="text-2xl font-bold" style={{ fontFamily: "JetBrains Mono, monospace", color: isCancelled ? "#EF4444" : "#F97316" }}>{token.id}</div>
           </div>
 
           {/* QR Code */}
@@ -97,11 +179,11 @@ export default function TokenPage() {
           <div className="grid grid-cols-2 gap-3 text-sm">
             <div>
               <div className="text-xs" style={{ color: "rgba(255,255,255,0.4)" }}>Student</div>
-              <div className="font-semibold text-white">{token.studentName}</div>
+              <div className="font-semibold text-white">{token.studentName || STUDENT.name}</div>
             </div>
             <div>
               <div className="text-xs" style={{ color: "rgba(255,255,255,0.4)" }}>ID</div>
-              <div className="font-semibold text-white" style={{ fontFamily: "JetBrains Mono" }}>{token.studentId}</div>
+              <div className="font-semibold text-white" style={{ fontFamily: "JetBrains Mono" }}>{token.studentId || STUDENT.id}</div>
             </div>
             <div>
               <div className="text-xs" style={{ color: "rgba(255,255,255,0.4)" }}>Meal Type</div>
@@ -114,13 +196,17 @@ export default function TokenPage() {
             <div>
               <div className="text-xs" style={{ color: "rgba(255,255,255,0.4)" }}>Issued At</div>
               <div className="font-semibold text-white" style={{ fontFamily: "JetBrains Mono", fontSize: 11 }}>
-                {createdAt.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true })}
+                {isNaN(createdAt.getTime())
+                  ? token.createdAt
+                  : createdAt.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true })}
               </div>
             </div>
             <div>
               <div className="text-xs" style={{ color: "rgba(255,255,255,0.4)" }}>Valid Until</div>
-              <div className="font-semibold" style={{ fontFamily: "JetBrains Mono", fontSize: 11, color: isExpired ? "#EF4444" : "#22C55E" }}>
-                {expiresAt.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true })}
+              <div className="font-semibold" style={{ fontFamily: "JetBrains Mono", fontSize: 11, color: isExpired || isCancelled ? "#EF4444" : "#22C55E" }}>
+                {isNaN(expiresAt.getTime())
+                  ? "45 min"
+                  : expiresAt.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true })}
               </div>
             </div>
           </div>
@@ -143,16 +229,28 @@ export default function TokenPage() {
       {/* Actions */}
       <div className="grid grid-cols-2 gap-3">
         <button onClick={() => setActivePage("menu")}
-          className="py-3 rounded-xl text-sm font-semibold text-white"
+          className="py-3 rounded-xl text-sm font-semibold text-white cursor-pointer"
           style={{ background: "linear-gradient(135deg, #F97316, #EA580C)" }}>
           Order More
         </button>
         <button onClick={() => setActivePage("history")}
-          className="py-3 rounded-xl text-sm font-semibold"
+          className="py-3 rounded-xl text-sm font-semibold cursor-pointer"
           style={{ background: "rgba(255,255,255,0.06)", color: "rgba(255,255,255,0.7)" }}>
           View History
         </button>
       </div>
+
+      {/* Cancel Order Button */}
+      {token.orderId && !isCancelled && !isCompleted && !isReady && (
+        <button
+          onClick={handleCancel}
+          disabled={cancelling}
+          className="w-full py-2.5 rounded-xl text-xs font-semibold cursor-pointer transition-colors"
+          style={{ background: "rgba(239,68,68,0.1)", color: "#EF4444", border: "1px solid rgba(239,68,68,0.2)" }}
+        >
+          {cancelling ? "Cancelling order..." : "Cancel This Order"}
+        </button>
+      )}
     </div>
   );
 }

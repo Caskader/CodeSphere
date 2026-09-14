@@ -1,16 +1,14 @@
 """
-Decorators to protect routes using Firebase ID tokens.
+Decorators to protect routes using Firebase ID tokens or backend JWTs.
 
-The client (mobile/web app) signs the student in with Firebase Auth,
-gets an ID token, and sends it as:  Authorization: Bearer <id_token>
-
-`token_required`  -> just verifies the token, attaches request.user
-`admin_required`  -> verifies token AND checks the user has an 'admin'
-                      custom claim (mess staff / manager)
+The client sends: Authorization: Bearer <id_token>
+`token_required`  -> verifies token (Firebase ID token or backend dev token), attaches request.user
+`admin_required`  -> verifies token AND checks user has admin claim/role
 """
 
 from functools import wraps
-from flask import request, jsonify
+from flask import request, jsonify, current_app
+import jwt
 from firebase_config import firebase_auth, db
 
 
@@ -21,6 +19,31 @@ def _extract_token():
     return None
 
 
+def _verify_token(token):
+    # 1. Try verifying as Firebase ID token
+    try:
+        decoded = firebase_auth.verify_id_token(token)
+        return {
+            "uid": decoded["uid"],
+            "email": decoded.get("email"),
+            "is_admin": decoded.get("admin", False),
+        }
+    except Exception:
+        pass
+
+    # 2. Fallback: try decoding as backend-signed JWT
+    try:
+        secret = current_app.config.get("SECRET_KEY", "hostel-mess-dev-secret-key-32-chars-minimum-length")
+        decoded = jwt.decode(token, secret, algorithms=["HS256"])
+        return {
+            "uid": decoded["uid"],
+            "email": decoded.get("email"),
+            "is_admin": decoded.get("is_admin", False),
+        }
+    except Exception as e:
+        raise ValueError(f"Invalid or expired token: {e}")
+
+
 def token_required(f):
     @wraps(f)
     def wrapper(*args, **kwargs):
@@ -28,15 +51,10 @@ def token_required(f):
         if not token:
             return jsonify({"error": "Missing Authorization Bearer token"}), 401
         try:
-            decoded = firebase_auth.verify_id_token(token)
+            request.user = _verify_token(token)
         except Exception as e:
             return jsonify({"error": "Invalid or expired token", "detail": str(e)}), 401
 
-        request.user = {
-            "uid": decoded["uid"],
-            "email": decoded.get("email"),
-            "is_admin": decoded.get("admin", False),
-        }
         return f(*args, **kwargs)
     return wrapper
 
@@ -48,17 +66,13 @@ def admin_required(f):
         if not token:
             return jsonify({"error": "Missing Authorization Bearer token"}), 401
         try:
-            decoded = firebase_auth.verify_id_token(token)
+            user = _verify_token(token)
         except Exception as e:
             return jsonify({"error": "Invalid or expired token", "detail": str(e)}), 401
 
-        if not decoded.get("admin", False):
+        if not user.get("is_admin", False):
             return jsonify({"error": "Admin privileges required"}), 403
 
-        request.user = {
-            "uid": decoded["uid"],
-            "email": decoded.get("email"),
-            "is_admin": True,
-        }
+        request.user = user
         return f(*args, **kwargs)
     return wrapper
