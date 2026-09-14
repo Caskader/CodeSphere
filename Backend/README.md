@@ -104,6 +104,11 @@ All authenticated routes expect `Authorization: Bearer <id_token>`.
 | GET | `/api/menu/<item_id>/reviews` | – | List reviews for an item |
 | POST | `/api/menu/<item_id>/reviews` | student | Add a 1–5 rating + comment |
 
+### Forecasting
+| Method | Route | Auth | Description |
+|---|---|---|---|
+| GET | `/api/predictions/monthly-demand` | admin | Five-dish preparation and raw-material forecast from `Data/final30.csv` |
+
 ## 5. Example: place an order
 
 ```bash

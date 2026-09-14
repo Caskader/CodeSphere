@@ -9,6 +9,7 @@ from routes.auth_routes import auth_bp
 from routes.menu_routes import menu_bp
 from routes.order_routes import order_bp
 from routes.review_routes import review_bp
+from routes.prediction_routes import prediction_bp
 
 
 def create_app():
@@ -20,6 +21,7 @@ def create_app():
     app.register_blueprint(menu_bp)
     app.register_blueprint(order_bp)
     app.register_blueprint(review_bp)
+    app.register_blueprint(prediction_bp)
 
     @app.route("/api/health", methods=["GET"])
     def health():

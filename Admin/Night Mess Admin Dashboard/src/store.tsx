@@ -50,6 +50,22 @@ export interface RawMaterial {
   unit: string;
 }
 
+export interface DemandForecast {
+  model: string;
+  data_points: number;
+  generated_at: string;
+  dishes: { name: string; unit: string; history_column: string; average_daily_orders: number; forecast_orders: number; safety_buffer: number; prepare_quantity: number }[];
+  raw_materials: { id: string; name: string; unit: string; quantity: number }[];
+  crowd: {
+    unit: string;
+    average_dishes_per_diner: number;
+    forecast: number;
+    lower: number;
+    upper: number;
+    history: { day: string; actual: number }[];
+  };
+}
+
 export interface Complaint {
   id: string;
   studentName: string;
@@ -293,8 +309,30 @@ const makeInitialState = (): AppState => {
 
 function reducer(state: AppState, action: Action): AppState {
   switch (action.type) {
-    case "SET_ORDERS":
-      return { ...state, orders: action.orders };
+    case "SET_ORDERS": {
+      // The API is the source of truth. Keep the local serving/waiting state
+      // for known orders, add newly accepted orders, and remove completed or
+      // cancelled orders from the live queue.
+      const queuedOrders = action.orders.filter((order) => order.status === "accepted");
+      const queuedByOrder = new Map(state.queue.map((entry) => [entry.orderId, entry]));
+      const nextQueue = queuedOrders.map((order) => queuedByOrder.get(order.id) || {
+        id: "Q" + generateId(),
+        studentName: order.studentName,
+        studentId: order.studentId,
+        tokenId: order.tokenId,
+        orderId: order.id,
+        position: 0,
+        mealType: order.mealType,
+        estimatedWait: 0,
+        status: "waiting" as const,
+        joinedAt: order.timestamp || now(),
+      }).map((entry, index) => ({
+        ...entry,
+        position: index + 1,
+        estimatedWait: entry.status === "serving" ? 0 : (index + 1) * 3,
+      }));
+      return { ...state, orders: action.orders, queue: nextQueue };
+    }
     case "ACCEPT_ORDER": {
       const order = state.orders.find((o) => o.id === action.orderId);
       if (!order) return state;
@@ -326,6 +364,7 @@ function reducer(state: AppState, action: Action): AppState {
         orders: state.orders.map((o) =>
           o.id === action.orderId ? { ...o, status: "rejected", paymentStatus: o.paymentStatus === "paid" ? "refunded" : o.paymentStatus, rejectionReason: action.reason } : o
         ),
+        queue: state.queue.filter((q) => q.orderId !== action.orderId),
       };
     case "MARK_COLLECTED": {
       const order = state.orders.find((o) => o.id === action.orderId);
@@ -491,6 +530,7 @@ interface StoreContextValue {
   createFoodItem: (food: Omit<FoodItem, "id">) => Promise<boolean>;
   createRawMaterial: (material: Omit<RawMaterial, "id">) => Promise<boolean>;
   loadInventoryDefaults: () => Promise<boolean>;
+  getDemandForecast: () => Promise<DemandForecast | null>;
   updateOrderStatus: (orderId: string, status: "preparing" | "completed" | "cancelled", rejectionReason?: string) => Promise<boolean>;
   verifyQR: (tokenId: string) => { status: QRStatus; order?: Order; message: string };
   sendNotification: (message: string) => void;
@@ -566,6 +606,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     } catch (err) {
       console.error("Failed to load inventory defaults", err);
       return false;
+    }
+  };
+
+  const getDemandForecast = async (): Promise<DemandForecast | null> => {
+    try {
+      const res = await fetch(`${API_BASE}/predictions/monthly-demand`, {
+        headers: { Authorization: `Bearer ${ADMIN_TOKEN}` },
+      });
+      return res.ok ? await res.json() as DemandForecast : null;
+    } catch (err) {
+      console.error("Failed to fetch demand forecast", err);
+      return null;
     }
   };
 
@@ -697,7 +749,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <StoreContext.Provider value={{ state, dispatch, createFoodItem, createRawMaterial, loadInventoryDefaults, updateOrderStatus, verifyQR, sendNotification }}>
+    <StoreContext.Provider value={{ state, dispatch, createFoodItem, createRawMaterial, loadInventoryDefaults, getDemandForecast, updateOrderStatus, verifyQR, sendNotification }}>
       {children}
     </StoreContext.Provider>
   );

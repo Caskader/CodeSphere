@@ -1,8 +1,8 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Area, AreaChart, CartesianGrid, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { AlertTriangle, BrainCircuit, CalendarDays, ChevronDown, Clock3, PackageCheck, Sparkles, TrendingUp, UserRoundCheck, Users } from "lucide-react";
 import { Badge, Button, Card, PageHeader, StatCard } from "../components/ui";
-import { useStore } from "../store";
+import { DemandForecast, useStore } from "../store";
 
 type Meal = "Breakfast" | "Lunch" | "Dinner";
 
@@ -87,18 +87,33 @@ function ChartTip({ active, payload, label }: any) {
 }
 
 export default function CrowdPrediction() {
-  const { state } = useStore();
+  const { state, getDemandForecast } = useStore();
   const [meal, setMeal] = useState<Meal>("Dinner");
   const [refreshed, setRefreshed] = useState(false);
+  const [demandForecast, setDemandForecast] = useState<DemandForecast | null>(null);
   const [planApplied, setPlanApplied] = useState(false);
   const [staffPlanApplied, setStaffPlanApplied] = useState(false);
   const forecast = forecastByMeal[meal];
+  const expectedCrowd = demandForecast?.crowd.forecast ?? forecast.peak;
   const currentQueue = state.queue.filter((entry) => entry.status !== "done").length;
-  const capacityUse = Math.round((forecast.peak / state.settings.maxCapacity) * 100);
+  const capacityUse = Math.round((expectedCrowd / state.settings.maxCapacity) * 100);
   const status = capacityUse > 85 ? "High demand expected" : "Capacity looks healthy";
   const recommendation = capacityUse > 85 ? "Open counter 2 before the peak window" : "One counter can handle the predicted load";
   const forecastDate = useMemo(() => new Date().toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "short" }), []);
-  const foodPlan = foodRecommendations[meal];
+  const refreshDemandForecast = async () => {
+    const forecastResult = await getDemandForecast();
+    if (forecastResult) setDemandForecast(forecastResult);
+    setRefreshed(true);
+  };
+  useEffect(() => { void refreshDemandForecast(); }, []);
+  const chartData = demandForecast ? [
+    ...demandForecast.crowd.history.slice(-7).map((point) => ({ time: point.day, actual: point.actual, forecast: point.actual, lower: point.actual, upper: point.actual })),
+    { time: "Tomorrow", actual: null, forecast: demandForecast.crowd.forecast, lower: demandForecast.crowd.lower, upper: demandForecast.crowd.upper },
+  ] : forecast.data;
+  const foodPlan = demandForecast?.dishes.map((dish) => ({
+    item: dish.name, unit: dish.unit, pastDemand: dish.average_daily_orders,
+    predicted: dish.forecast_orders, buffer: dish.safety_buffer, available: Number.POSITIVE_INFINITY,
+  })) || foodRecommendations[meal];
   const counterPlan = counterPlans[meal];
   const restockCount = foodPlan.filter((item) => item.available < item.predicted + item.buffer).length;
   const currentlyAllocated = counterPlan.reduce((total, counter) => total + counter.current.length, 0);
@@ -107,7 +122,7 @@ export default function CrowdPrediction() {
   return (
     <div className="space-y-5 animate-fade-up">
       <PageHeader title="Crowd Forecast" subtitle="Predicted footfall using historical meal, queue, and calendar patterns">
-        <Button variant="outline" size="sm" className="flex items-center gap-1.5" onClick={() => setRefreshed(true)}>
+        <Button variant="outline" size="sm" className="flex items-center gap-1.5" onClick={refreshDemandForecast}>
           <Sparkles size={13} /> {refreshed ? "Forecast refreshed" : "Refresh forecast"}
         </Button>
       </PageHeader>
@@ -119,7 +134,7 @@ export default function CrowdPrediction() {
             <div className="mt-0.5 flex h-10 w-10 items-center justify-center rounded-xl bg-[#7c3aed20] text-[#a78bfa]"><BrainCircuit size={20} /></div>
             <div>
               <div className="flex items-center gap-2"><span className="text-sm font-semibold text-[#dce6f5]">Today’s {meal.toLowerCase()} forecast</span><Badge variant="accent" size="xs">MODEL ACTIVE</Badge></div>
-              <p className="mt-1 text-xs text-[#5a7099]">Based on 12 weeks of order history · Last updated just now</p>
+              <p className="mt-1 text-xs text-[#5a7099]">{demandForecast ? `Based on ${demandForecast.data_points} days of CSV order history · ${demandForecast.model}` : "Using the dashboard fallback until the forecast API is available"}</p>
             </div>
           </div>
           <div className="flex items-center gap-2 rounded-lg border border-[#1a2540] bg-[#080d1a] p-1">
@@ -129,7 +144,7 @@ export default function CrowdPrediction() {
       </Card>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatCard label="Expected Peak" value={forecast.peak} sub={`at ${forecast.peakTime}`} accent="purple" icon={<Users size={16} />} />
+        <StatCard label={demandForecast ? "Expected crowd" : "Expected Peak"} value={expectedCrowd} sub={demandForecast ? "tomorrow · estimated diners" : `at ${forecast.peakTime}`} accent="purple" icon={<Users size={16} />} />
         <StatCard label="Peak Capacity" value={`${capacityUse}%`} sub={`of ${state.settings.maxCapacity} seats`} accent={capacityUse > 85 ? "yellow" : "green"} icon={<TrendingUp size={16} />} />
         <StatCard label="Current Queue" value={currentQueue} sub="Live signal included" accent="cyan" icon={<Clock3 size={16} />} />
         <StatCard label="Model Confidence" value={`${forecast.confidence}%`} sub="from past patterns" accent="green" icon={<BrainCircuit size={16} />} />
@@ -138,11 +153,11 @@ export default function CrowdPrediction() {
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
         <Card className="xl:col-span-2">
           <div className="mb-4 flex items-start justify-between">
-            <div><div className="text-xs font-semibold text-[#dce6f5]">Expected crowd by time</div><div className="mt-0.5 text-[10px] text-[#5a7099]">Observed activity transitions into the forecast window</div></div>
+            <div><div className="text-xs font-semibold text-[#dce6f5]">{demandForecast ? "Expected crowd by day" : "Expected crowd by time"}</div><div className="mt-0.5 text-[10px] text-[#5a7099]">{demandForecast ? `Last 7 days of CSV demand, with tomorrow's predicted ${demandForecast.crowd.unit}` : "Observed activity transitions into the forecast window"}</div></div>
             <Badge variant="info" size="xs"><CalendarDays size={10} className="mr-1" /> {forecastDate}</Badge>
           </div>
           <ResponsiveContainer width="100%" height={290}>
-            <AreaChart data={forecast.data} margin={{ top: 8, right: 8, left: -18, bottom: 0 }}>
+            <AreaChart data={chartData} margin={{ top: 8, right: 8, left: -18, bottom: 0 }}>
               <defs><linearGradient id="forecastBand" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#7c3aed" stopOpacity={0.28} /><stop offset="95%" stopColor="#7c3aed" stopOpacity={0.02} /></linearGradient></defs>
               <CartesianGrid stroke="#1a2540" strokeDasharray="3 3" vertical={false} />
               <XAxis dataKey="time" tick={{ fontSize: 9, fill: "#5a7099", fontFamily: "DM Mono" }} axisLine={false} tickLine={false} />
@@ -168,7 +183,7 @@ export default function CrowdPrediction() {
           <Card>
             <div className="mb-3 flex items-center justify-between"><span className="text-xs font-semibold text-[#dce6f5]">Recommended preparation</span><ChevronDown size={14} className="text-[#5a7099]" /></div>
             <div className="space-y-3">
-              {[{ label: "Meals to prepare", value: `${Math.ceil(forecast.peak * 1.08)} portions`, color: "text-[#a78bfa]" }, { label: "Counters to staff", value: capacityUse > 85 ? "2 counters" : "1 counter", color: "text-[#00c8ff]" }, { label: "Estimated wait", value: forecast.service, color: "text-[#00e676]" }].map((item) => <div key={item.label} className="flex items-center justify-between border-b border-[#1a254030] pb-2 last:border-0 last:pb-0"><span className="text-[10px] text-[#5a7099]">{item.label}</span><span className={`text-[10px] font-medium mono ${item.color}`}>{item.value}</span></div>)}
+              {[{ label: "Meals to prepare", value: `${Math.ceil(expectedCrowd * 1.08)} portions`, color: "text-[#a78bfa]" }, { label: "Counters to staff", value: capacityUse > 85 ? "2 counters" : "1 counter", color: "text-[#00c8ff]" }, { label: "Estimated wait", value: forecast.service, color: "text-[#00e676]" }].map((item) => <div key={item.label} className="flex items-center justify-between border-b border-[#1a254030] pb-2 last:border-0 last:pb-0"><span className="text-[10px] text-[#5a7099]">{item.label}</span><span className={`text-[10px] font-medium mono ${item.color}`}>{item.value}</span></div>)}
             </div>
           </Card>
         </div>
@@ -191,6 +206,11 @@ export default function CrowdPrediction() {
         <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-[#080d1a] px-3 py-2.5"><span className="text-[10px] text-[#5a7099]">Forecast adds a 7–8% buffer to protect service levels without excess waste.</span>{restockCount > 0 ? <span className="text-[10px] mono text-[#ffb300]">{restockCount} item{restockCount > 1 ? "s" : ""} need restocking</span> : <span className="text-[10px] mono text-[#00e676]">All forecast quantities are in stock</span>}</div>
       </Card>
 
+      {demandForecast && <Card className="border-[#a78bfa35]">
+        <div className="mb-3"><div className="text-xs font-semibold text-[#dce6f5]">Raw material needed for the preparation plan</div><p className="mt-0.5 text-[10px] text-[#5a7099]">Aggregated from the five dish forecasts and their per-serving recipes.</p></div>
+        <div className="flex flex-wrap gap-2">{demandForecast.raw_materials.map((material) => <div key={material.id} className="rounded-lg border border-[#1a2540] bg-[#080d1a] px-3 py-2"><span className="text-[10px] text-[#a0b4cc]">{material.name}</span><span className="ml-2 text-[11px] font-semibold text-[#a78bfa] mono">{material.quantity} {material.unit}</span></div>)}</div>
+      </Card>}
+
       <Card className="border-[#00c8ff35]">
         <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex items-start gap-2.5">
@@ -204,7 +224,7 @@ export default function CrowdPrediction() {
           <div className="rounded-lg border border-[#1a2540] bg-[#080d1a] px-3 py-2.5"><div className="text-[9px] uppercase tracking-wider text-[#3a4d6b] mono">Recommended workforce</div><div className="mt-1 text-lg font-semibold text-[#a78bfa] mono">{recommendedStaff} <span className="text-[10px] font-normal text-[#5a7099]">staff required</span></div></div>
           <div className="rounded-lg border border-[#1a2540] bg-[#080d1a] px-3 py-2.5"><div className="text-[9px] uppercase tracking-wider text-[#3a4d6b] mono">Coverage status</div><div className={`mt-1 text-sm font-semibold ${currentlyAllocated >= recommendedStaff ? "text-[#00e676]" : "text-[#ffb300]"}`}>{currentlyAllocated >= recommendedStaff ? "Fully covered" : `${recommendedStaff - currentlyAllocated} staff short`}</div></div>
         </div>
-        <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">{counterPlan.map((counter) => { const gap = counter.recommended - counter.current.length; const load = Math.round(counter.crowd / forecast.peak * 100); return <div key={counter.counter} className={`rounded-xl border p-3 ${gap > 0 ? "border-[#ffb30035] bg-[#ffb30006]" : "border-[#1a2540] bg-[#080d1a]"}`}><div className="flex items-start justify-between gap-2"><div><div className="text-xs font-semibold text-[#dce6f5]">{counter.counter}</div><div className="mt-0.5 text-[10px] text-[#5a7099]">{counter.role}</div></div><Badge variant={gap > 0 ? "warning" : "success"} size="xs">{counter.crowd} PEOPLE</Badge></div><div className="mt-3"><div className="mb-1.5 flex justify-between text-[9px] mono text-[#5a7099]"><span>PEAK CROWD SHARE</span><span>{load}%</span></div><div className="h-1.5 overflow-hidden rounded-full bg-[#1a2540]"><div className={gap > 0 ? "h-full rounded-full bg-[#ffb300]" : "h-full rounded-full bg-[#00c8ff]"} style={{ width: `${load}%` }} /></div></div><div className="mt-3 border-t border-[#1a254030] pt-2.5"><div className="text-[9px] uppercase tracking-wider text-[#3a4d6b] mono">Currently allotted</div><div className="mt-1.5 flex flex-wrap gap-1.5">{counter.current.map((member) => <span key={member} className="rounded-md bg-[#1a2540] px-1.5 py-1 text-[9px] text-[#a0b4cc] mono">{member}</span>)}</div></div><div className="mt-3 flex items-center justify-between"><span className="text-[10px] text-[#5a7099]">Recommended team</span><span className={`text-[11px] font-semibold mono ${gap > 0 ? "text-[#ffb300]" : "text-[#00e676]"}`}>{counter.recommended} staff {gap > 0 ? `(add ${gap})` : "✓"}</span></div></div>; })}</div>
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">{counterPlan.map((counter) => { const gap = counter.recommended - counter.current.length; const load = Math.round(counter.crowd / expectedCrowd * 100); return <div key={counter.counter} className={`rounded-xl border p-3 ${gap > 0 ? "border-[#ffb30035] bg-[#ffb30006]" : "border-[#1a2540] bg-[#080d1a]"}`}><div className="flex items-start justify-between gap-2"><div><div className="text-xs font-semibold text-[#dce6f5]">{counter.counter}</div><div className="mt-0.5 text-[10px] text-[#5a7099]">{counter.role}</div></div><Badge variant={gap > 0 ? "warning" : "success"} size="xs">{counter.crowd} PEOPLE</Badge></div><div className="mt-3"><div className="mb-1.5 flex justify-between text-[9px] mono text-[#5a7099]"><span>PEAK CROWD SHARE</span><span>{load}%</span></div><div className="h-1.5 overflow-hidden rounded-full bg-[#1a2540]"><div className={gap > 0 ? "h-full rounded-full bg-[#ffb300]" : "h-full rounded-full bg-[#00c8ff]"} style={{ width: `${load}%` }} /></div></div><div className="mt-3 border-t border-[#1a254030] pt-2.5"><div className="text-[9px] uppercase tracking-wider text-[#3a4d6b] mono">Currently allotted</div><div className="mt-1.5 flex flex-wrap gap-1.5">{counter.current.map((member) => <span key={member} className="rounded-md bg-[#1a2540] px-1.5 py-1 text-[9px] text-[#a0b4cc] mono">{member}</span>)}</div></div><div className="mt-3 flex items-center justify-between"><span className="text-[10px] text-[#5a7099]">Recommended team</span><span className={`text-[11px] font-semibold mono ${gap > 0 ? "text-[#ffb300]" : "text-[#00e676]"}`}>{counter.recommended} staff {gap > 0 ? `(add ${gap})` : "✓"}</span></div></div>; })}</div>
       </Card>
 
       <Card>
