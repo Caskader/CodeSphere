@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Plus, Edit2, Trash2, Package, Search } from "lucide-react";
+import { Plus, Edit2, Trash2, Package, RefreshCw } from "lucide-react";
 import { useStore, FoodItem, Availability, RawMaterial } from "../store";
 import { Card, Badge, Button, PageHeader, Input, Select, Modal, Textarea, StatCard } from "../components/ui";
 
@@ -106,7 +106,7 @@ function FoodModal({
 }
 
 export default function MenuFood() {
-  const { state, dispatch, createFoodItem, createRawMaterial, loadInventoryDefaults } = useStore();
+  const { state, dispatch, createFoodItem, createRawMaterial, loadFoodItems, loadInventoryDefaults } = useStore();
   const [search, setSearch] = useState("");
   const [filterCat, setFilterCat] = useState("All");
   const [filterAvail, setFilterAvail] = useState("All");
@@ -117,6 +117,7 @@ export default function MenuFood() {
   const [rawMaterialName, setRawMaterialName] = useState("");
   const [rawMaterialQuantity, setRawMaterialQuantity] = useState("");
   const [rawMaterialUnit, setRawMaterialUnit] = useState("units");
+  const [refreshing, setRefreshing] = useState(false);
 
   const allCategories = ["All", ...Array.from(new Set(state.foodItems.map((f) => f.category)))];
 
@@ -176,14 +177,29 @@ export default function MenuFood() {
     if (!await loadInventoryDefaults()) setActionError("Could not load the default raw materials and recipes.");
   };
 
+  const refreshMenu = async () => {
+    setRefreshing(true);
+    setActionError("");
+    const loaded = await loadFoodItems();
+    if (!loaded) {
+      setActionError("Could not reload menu items from the server. Check that the backend is running and VITE_API_URL points to it.");
+    }
+    setRefreshing(false);
+  };
+
   const availVariant = (a: Availability) => a === "available" ? "success" : a === "limited" ? "warning" : "danger";
 
   return (
     <div className="space-y-5 animate-fade-up">
       <PageHeader title="Menu & Food" subtitle="Manage food items, stock levels and availability">
-        <Button variant="primary" size="sm" onClick={openAdd}>
-          <span className="flex items-center gap-1.5"><Plus size={12} /> Add Item</span>
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={refreshMenu} disabled={refreshing}>
+            <span className="flex items-center gap-1.5"><RefreshCw size={12} className={refreshing ? "animate-spin" : ""} /> {refreshing ? "Reloading…" : "Reload"}</span>
+          </Button>
+          <Button variant="primary" size="sm" onClick={openAdd}>
+            <span className="flex items-center gap-1.5"><Plus size={12} /> Add Item</span>
+          </Button>
+        </div>
       </PageHeader>
 
       {actionError && <div className="rounded-md border border-[#ff3d7133] bg-[#ff3d7114] px-3 py-2 text-xs text-[#ff7899]">{actionError}</div>}
