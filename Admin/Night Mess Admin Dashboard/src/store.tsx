@@ -110,6 +110,7 @@ export interface AppState {
 }
 
 type Action =
+  | { type: "SET_ORDERS"; orders: Order[] }
   | { type: "ACCEPT_ORDER"; orderId: string }
   | { type: "REJECT_ORDER"; orderId: string; reason: string }
   | { type: "MARK_COLLECTED"; orderId: string }
@@ -271,6 +272,8 @@ const makeInitialState = (): AppState => {
 
 function reducer(state: AppState, action: Action): AppState {
   switch (action.type) {
+    case "SET_ORDERS":
+      return { ...state, orders: action.orders };
     case "ACCEPT_ORDER": {
       const order = state.orders.find((o) => o.id === action.orderId);
       if (!order) return state;
@@ -468,6 +471,39 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     } catch {}
   }, [state]);
+
+  useEffect(() => {
+    const fetchOrders = async () => {
+      try {
+        const token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1aWQiOiJhZG1pbiIsImVtYWlsIjoiYWRtaW5Adml0LmFjLmluIiwiaXNfYWRtaW4iOnRydWUsIm5hbWUiOiJBZG1pbiIsImV4cCI6MTgyMDkyNTM1MX0.bSafq0-bKWIsnzoO40t_nA1BELUzt99cuWuxfvbzzQY";
+        const res = await fetch("http://localhost:5000/api/orders", {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (res.ok) {
+          const data = await res.json();
+          const mappedOrders: Order[] = data.map((o: any) => ({
+            id: o.id,
+            studentName: o.student_name,
+            studentId: o.student_id,
+            mealType: o.meal_type.toLowerCase(),
+            items: o.items.map((i: any) => `${i.name} x${i.quantity}`),
+            status: o.status === "placed" ? "pending" : (o.status === "preparing" || o.status === "ready" ? "accepted" : (o.status === "completed" ? "collected" : "rejected")),
+            paymentStatus: "paid",
+            tokenId: o.token_id,
+            amount: o.total_amount,
+            timestamp: o.created_at,
+          }));
+          dispatch({ type: "SET_ORDERS", orders: mappedOrders });
+        }
+      } catch (err) {
+        console.error("Failed to fetch orders", err);
+      }
+    };
+    fetchOrders();
+    const intervalId = setInterval(fetchOrders, 5000);
+    return () => clearInterval(intervalId);
+  }, []);
+
 
   const verifyQR = (tokenId: string): { status: QRStatus; order?: Order; message: string } => {
     const order = state.orders.find((o) => o.tokenId === tokenId.toUpperCase());

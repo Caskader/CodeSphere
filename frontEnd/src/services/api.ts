@@ -247,6 +247,15 @@ export const api = {
     });
   },
 
+  async getPendingCount(): Promise<number> {
+    try {
+      const data = await apiFetch<{ queueCount: number }>("/orders/pending_count");
+      return data.queueCount;
+    } catch {
+      return 28; // fallback
+    }
+  },
+
   async getMyOrders(): Promise<BackendOrder[]> {
     return apiFetch<BackendOrder[]>("/orders/my");
   },
