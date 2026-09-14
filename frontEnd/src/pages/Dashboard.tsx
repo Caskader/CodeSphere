@@ -117,7 +117,7 @@ export default function Dashboard() {
       {/* Stats Row */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <StatCard title="Live Queue" value={String(queueCount)} sub="people in mess" accent="#F97316" />
-        <StatCard title="Wait Time" value={`~${waitTime}m`} sub="estimated" accent="#EAB308" />
+        <StatCard title="Wait Time" value={`~${queueCount*3}m`} sub="estimated" accent="#EAB308" />
         <StatCard title="Crowd Level" value={crowd.label} sub="current density" accent={crowd.color} />
         <StatCard title="Mess Closes" value="12:30 AM" sub="tonight (extended)" accent="#22C55E" />
       </div>

@@ -157,16 +157,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
     refreshProfile();
   }, [refreshMenu, refreshOrders, refreshProfile]);
 
-  // Simulate real-time queue changes
+  // Fetch real-time queue changes from backend
+  const refreshQueueCount = useCallback(async () => {
+    try {
+      const count = await api.getPendingCount();
+      // Use the actual count from backend, minimum of 3 for demo visuals
+      setQueueCount(Math.max(3, count));
+    } catch (err) {
+      console.warn("Could not load queue count:", err);
+    }
+  }, []);
+
   useEffect(() => {
+    refreshQueueCount();
     const interval = setInterval(() => {
-      setQueueCount(prev => {
-        const delta = Math.round((Math.random() - 0.45) * 6);
-        return Math.max(3, Math.min(75, prev + delta));
-      });
+      refreshQueueCount();
     }, 8000);
     return () => clearInterval(interval);
-  }, []);
+  }, [refreshQueueCount]);
 
   const addToCart = useCallback((item: MenuItem) => {
     setCart(prev => {

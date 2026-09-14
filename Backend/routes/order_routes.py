@@ -123,6 +123,18 @@ def place_order():
     }), 201
 
 
+@order_bp.route("/pending_count", methods=["GET"])
+@token_required
+def get_pending_count():
+    try:
+        placed_query = db.collection("orders").where("status", "==", "placed").stream()
+        preparing_query = db.collection("orders").where("status", "==", "preparing").stream()
+        count = sum(1 for _ in placed_query) + sum(1 for _ in preparing_query)
+        return jsonify({"queueCount": count}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @order_bp.route("/my", methods=["GET"])
 @token_required
 def my_orders():
