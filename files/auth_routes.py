@@ -13,7 +13,7 @@ your backend can also serve as a login endpoint for non-web clients.
 import os
 import requests
 from flask import Blueprint, request, jsonify
-from firebase_config import firebase_auth, db
+from firebase_config import firebase_auth, firestore_db as db
 from utils.auth_middleware import token_required, admin_required
 
 auth_bp = Blueprint("auth", __name__, url_prefix="/api/auth")

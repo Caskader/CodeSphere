@@ -8,7 +8,7 @@ Firestore layout:
 
 from flask import Blueprint, request, jsonify
 from firebase_admin import firestore
-from firebase_config import db
+from firebase_config import firestore_db as db
 from utils.auth_middleware import token_required
 
 review_bp = Blueprint("reviews", __name__, url_prefix="/api/menu/<item_id>/reviews")

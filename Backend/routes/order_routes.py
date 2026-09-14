@@ -19,6 +19,7 @@ Firestore layout:
 from flask import Blueprint, request, jsonify
 from firebase_admin import firestore
 from firebase_config import db
+from realtime_store import realtime_transactional
 from utils.auth_middleware import token_required, admin_required
 
 order_bp = Blueprint("orders", __name__, url_prefix="/api/orders")
@@ -126,7 +127,7 @@ def place_order():
     # same final units of an ingredient.
     transaction = db.transaction()
 
-    @firestore.transactional
+    @realtime_transactional if type(db).__name__ == "RealtimeDatabase" else firestore.transactional
     def reserve_inventory_and_create_order(transaction):
         material_refs = []
         dish_refs = []
