@@ -1,0 +1,111 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:ital,wght@0,300;0,400;0,500;1,300&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap');
+@import 'tailwindcss';
+
+@theme inline {
+  --color-background: #080d1a;
+  --color-surface: #0d1426;
+  --color-card: #101828;
+  --color-card-hover: #141e30;
+  --color-border: #1a2540;
+  --color-border-bright: #243352;
+  --color-primary: #00c8ff;
+  --color-primary-dim: #0090b8;
+  --color-accent: #7c3aed;
+  --color-success: #00e676;
+  --color-warning: #ffb300;
+  --color-danger: #ff3d71;
+  --color-text: #dce6f5;
+  --color-text-muted: #5a7099;
+  --color-text-dim: #3a4d6b;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: #080d1a;
+  color: #dce6f5;
+  font-family: 'Inter', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #1a2540;
+  border-radius: 2px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #243352;
+}
+
+.mono {
+  font-family: 'DM Mono', monospace;
+}
+
+.sans {
+  font-family: 'DM Sans', sans-serif;
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+@keyframes slide-in {
+  from { transform: translateX(-8px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+@keyframes fade-up {
+  from { transform: translateY(8px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.animate-pulse-dot {
+  animation: pulse-dot 1.5s ease-in-out infinite;
+}
+
+.animate-slide-in {
+  animation: slide-in 0.2s ease-out;
+}
+
+.animate-fade-up {
+  animation: fade-up 0.3s ease-out;
+}
+
+.glow-cyan {
+  box-shadow: 0 0 20px rgba(0, 200, 255, 0.15);
+}
+
+.glow-green {
+  box-shadow: 0 0 20px rgba(0, 230, 118, 0.15);
+}
+
+.glow-red {
+  box-shadow: 0 0 20px rgba(255, 61, 113, 0.15);
+}
+
+.grid-bg {
+  background-image:
+    linear-gradient(rgba(26, 37, 64, 0.4) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(26, 37, 64, 0.4) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
