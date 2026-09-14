@@ -191,9 +191,9 @@ export const api = {
     const rawItems = await apiFetch<any[]>(`/menu${query}`);
 
     return rawItems.map((item) => {
-      const isAvail = item.is_available !== false;
+      const isAvail = item.is_available !== false && item.inventory_available !== false;
       const status: "available" | "limited" | "unavailable" =
-        item.status || (isAvail ? "available" : "unavailable");
+        isAvail ? (item.status || "available") : "unavailable";
 
       return {
         id: item.id,
@@ -214,14 +214,14 @@ export const api = {
 
   async getMenuItem(id: string): Promise<MenuItem> {
     const item = await apiFetch<any>(`/menu/${id}`);
-    const isAvail = item.is_available !== false;
+    const isAvail = item.is_available !== false && item.inventory_available !== false;
     return {
       id: item.id,
       name: item.name,
       description: item.description || "",
       price: Number(item.price),
       category: item.category || "Main Course",
-      status: item.status || (isAvail ? "available" : "unavailable"),
+      status: isAvail ? (item.status || "available") : "unavailable",
       is_available: isAvail,
       emoji: item.emoji || getEmojiForDish(item.name, item.category),
       prepTime: item.prepTime || item.prep_time || 5,

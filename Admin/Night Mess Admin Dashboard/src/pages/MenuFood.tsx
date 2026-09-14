@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Plus, Edit2, Trash2, Package, Search } from "lucide-react";
-import { useStore, FoodItem, Availability } from "../store";
+import { useStore, FoodItem, Availability, RawMaterial } from "../store";
 import { Card, Badge, Button, PageHeader, Input, Select, Modal, Textarea, StatCard } from "../components/ui";
 
 const CATEGORIES = ["Breakfast", "Main Course", "Rice", "Bread", "Snacks", "Beverages", "Sides", "Desserts"];
@@ -10,17 +10,24 @@ function FoodModal({
   onClose,
   initial,
   onSave,
+  rawMaterials,
 }: {
   open: boolean;
   onClose: () => void;
   initial?: FoodItem;
   onSave: (food: Omit<FoodItem, "id">) => Promise<boolean>;
+  rawMaterials: RawMaterial[];
 }) {
   const blank: Omit<FoodItem, "id"> = {
     name: "", category: "Main Course", stock: 0, maxStock: 100,
-    availability: "available", price: 0, wastage: 0, unit: "servings",
+    availability: "available", price: 0, wastage: 0, unit: "servings", inventoryMode: "dish_stock",
   };
-  const [form, setForm] = useState<Omit<FoodItem, "id">>(initial ? { ...initial } : blank);
+  const [form, setForm] = useState<Omit<FoodItem, "id">>(initial ? {
+    ...initial,
+    inventoryMode: initial.inventoryMode || (initial.ingredients?.length ? "ingredients" : "dish_stock"),
+  } : blank);
+  const [ingredientId, setIngredientId] = useState("");
+  const [ingredientQuantity, setIngredientQuantity] = useState("1");
 
   const set = (k: keyof typeof form, v: any) => setForm((f) => ({ ...f, [k]: v }));
 
@@ -28,6 +35,19 @@ function FoodModal({
     if (!form.name.trim()) return;
     const saved = await onSave({ ...form, stock: Number(form.stock), maxStock: Number(form.maxStock), price: Number(form.price), wastage: Number(form.wastage) });
     if (saved) onClose();
+  };
+
+  const addIngredient = () => {
+    const material = rawMaterials.find((candidate) => candidate.id === ingredientId);
+    const quantity = Number(ingredientQuantity);
+    if (!material || !Number.isFinite(quantity) || quantity <= 0) return;
+    const ingredients = form.ingredients || [];
+    const existing = ingredients.find((ingredient) => ingredient.materialId === material.id);
+    set("ingredients", existing
+      ? ingredients.map((ingredient) => ingredient.materialId === material.id ? { ...ingredient, quantity } : ingredient)
+      : [...ingredients, { materialId: material.id, name: material.name, quantity }]);
+    setIngredientId("");
+    setIngredientQuantity("1");
   };
 
   return (
@@ -48,7 +68,34 @@ function FoodModal({
             <option value="limited">Limited</option>
             <option value="unavailable">Unavailable</option>
           </Select>
+          <Select label="Availability tracking" value={form.inventoryMode || "dish_stock"} onChange={(e) => set("inventoryMode", e.target.value as "ingredients" | "dish_stock")} className="col-span-2">
+            <option value="dish_stock">Dish quantity (reduce serving stock)</option>
+            <option value="ingredients">Raw materials (reduce recipe ingredients)</option>
+          </Select>
         </div>
+        {form.inventoryMode === "ingredients" && <div className="rounded-lg border border-[#1a2540] p-3">
+          <div className="mb-2 text-[10px] mono uppercase text-[#5a7099]">Raw materials needed per dish</div>
+          <div className="flex gap-2">
+            <Select value={ingredientId} onChange={(e) => setIngredientId(e.target.value)} className="flex-1">
+              <option value="">Choose material</option>
+              {rawMaterials.map((material) => <option key={material.id} value={material.id}>{material.name} ({material.unit})</option>)}
+            </Select>
+            <Input type="number" min="0.01" step="0.01" value={ingredientQuantity} onChange={(e) => setIngredientQuantity(e.target.value)} className="w-20" />
+            <Button variant="outline" size="xs" onClick={addIngredient}>Add</Button>
+          </div>
+          {(form.ingredients || []).length === 0 ? (
+            <div className="mt-2 text-[10px] text-[#3a4d6b]">Add materials to enable ingredient-based stock checks.</div>
+          ) : (
+            <div className="mt-2 flex flex-wrap gap-1">
+              {form.ingredients?.map((ingredient) => (
+                <button key={ingredient.materialId} onClick={() => set("ingredients", form.ingredients?.filter((item) => item.materialId !== ingredient.materialId))} className="rounded bg-[#00c8ff14] px-2 py-1 text-[10px] text-[#00c8ff] hover:bg-[#ff3d7120]">
+                  {ingredient.name} ×{ingredient.quantity} ×
+                </button>
+              ))}
+            </div>
+          )}
+        </div>}
+        {form.inventoryMode !== "ingredients" && <div className="text-[10px] text-[#5a7099]">Each ordered dish reduces its Current Stock by one. Set Current Stock above to control availability.</div>}
         <div className="flex gap-2 pt-2">
           <Button variant="primary" size="sm" onClick={handleSave} className="flex-1">{initial ? "Save Changes" : "Add Item"}</Button>
           <Button variant="ghost" size="sm" onClick={onClose}>Cancel</Button>
@@ -59,7 +106,7 @@ function FoodModal({
 }
 
 export default function MenuFood() {
-  const { state, dispatch, createFoodItem } = useStore();
+  const { state, dispatch, createFoodItem, createRawMaterial, loadInventoryDefaults } = useStore();
   const [search, setSearch] = useState("");
   const [filterCat, setFilterCat] = useState("All");
   const [filterAvail, setFilterAvail] = useState("All");
@@ -67,6 +114,9 @@ export default function MenuFood() {
   const [editItem, setEditItem] = useState<FoodItem | undefined>();
   const [stockEdit, setStockEdit] = useState<Record<string, string>>({});
   const [actionError, setActionError] = useState("");
+  const [rawMaterialName, setRawMaterialName] = useState("");
+  const [rawMaterialQuantity, setRawMaterialQuantity] = useState("");
+  const [rawMaterialUnit, setRawMaterialUnit] = useState("units");
 
   const allCategories = ["All", ...Array.from(new Set(state.foodItems.map((f) => f.category)))];
 
@@ -107,6 +157,25 @@ export default function MenuFood() {
     }
   };
 
+  const addRawMaterial = async () => {
+    const quantity = Number(rawMaterialQuantity);
+    if (!rawMaterialName.trim() || !Number.isFinite(quantity) || quantity < 0) return;
+    setActionError("");
+    const created = await createRawMaterial({ name: rawMaterialName.trim(), quantity, unit: rawMaterialUnit.trim() || "units" });
+    if (!created) {
+      setActionError("Could not save the raw material to the database.");
+      return;
+    }
+    setRawMaterialName("");
+    setRawMaterialQuantity("");
+    setRawMaterialUnit("units");
+  };
+
+  const loadDefaults = async () => {
+    setActionError("");
+    if (!await loadInventoryDefaults()) setActionError("Could not load the default raw materials and recipes.");
+  };
+
   const availVariant = (a: Availability) => a === "available" ? "success" : a === "limited" ? "warning" : "danger";
 
   return (
@@ -124,6 +193,21 @@ export default function MenuFood() {
         <StatCard label="Not Available" value={lowStock} sub="Limited or unavailable" accent={lowStock > 3 ? "red" : "yellow"} icon={<Package size={16} />} />
         <StatCard label="Total Wastage" value={`${totalWastage}`} sub="Plates today" accent="red" icon={<Package size={16} />} />
       </div>
+
+      <Card>
+        <div className="mb-3 flex items-center justify-between gap-2"><div className="text-xs font-semibold text-[#dce6f5]">Raw Material Inventory</div><Button variant="outline" size="xs" onClick={loadDefaults}>Load Defaults</Button></div>
+        <div className="flex flex-wrap gap-2">
+          <Input placeholder="e.g. Bread, Tomato, Cheese" value={rawMaterialName} onChange={(e) => setRawMaterialName(e.target.value)} className="min-w-44 flex-1" />
+          <Input type="number" min="0" step="0.01" placeholder="Amount" value={rawMaterialQuantity} onChange={(e) => setRawMaterialQuantity(e.target.value)} className="w-28" />
+          <Input placeholder="unit (kg, pcs)" value={rawMaterialUnit} onChange={(e) => setRawMaterialUnit(e.target.value)} className="w-28" />
+          <Button variant="outline" size="sm" onClick={addRawMaterial}>Add Material</Button>
+        </div>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {state.rawMaterials.length === 0 ? <span className="text-[10px] text-[#5a7099]">No raw materials yet. Add one before assigning a recipe.</span> : state.rawMaterials.map((material) => (
+            <span key={material.id} className="rounded bg-[#1a2540] px-2 py-1 text-[10px] text-[#a0b4cc]">{material.name}: {material.quantity} {material.unit}</span>
+          ))}
+        </div>
+      </Card>
 
       {/* Filters */}
       <Card>
@@ -237,6 +321,7 @@ export default function MenuFood() {
         onClose={() => setModalOpen(false)}
         initial={editItem}
         onSave={handleSave}
+        rawMaterials={state.rawMaterials}
       />
     </div>
   );

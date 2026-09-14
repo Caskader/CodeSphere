@@ -24,6 +24,15 @@ order_bp = Blueprint("orders", __name__, url_prefix="/api/orders")
 VALID_STATUSES = ["placed", "preparing", "ready", "completed", "cancelled"]
 
 
+class InsufficientInventory(Exception):
+    pass
+
+
+def canonical_material_id(material_id):
+    value = str(material_id).strip().lower().replace(" ", "-")
+    return {"breads": "bread", "tomatoes": "tomato", "tomatos": "tomato", "potatoes": "potato", "carrots": "carrot", "pastas": "pasta", "cheeses": "cheese", "rices": "rice", "onions": "onion", "paneers": "paneer", "flours": "flour", "oils": "oil"}.get(value, value)
+
+
 @order_bp.route("", methods=["POST"])
 @token_required
 def place_order():
@@ -40,6 +49,8 @@ def place_order():
     # Rebuild the order server-side from authoritative menu data
     order_items = []
     total = 0
+    material_requirements = {}
+    dish_stock_requirements = {}
     for entry in cart:
         item_id = entry.get("item_id")
         quantity = int(entry.get("quantity", 1))
@@ -62,6 +73,18 @@ def place_order():
             "price": menu_item["price"],
             "quantity": quantity,
         })
+        inventory_mode = menu_item.get("inventory_mode")
+        if inventory_mode == "dish_stock":
+            dish_stock_requirements[item_id] = dish_stock_requirements.get(item_id, 0) + quantity
+        else:
+            ingredients = menu_item.get("ingredients", [])
+            if inventory_mode == "ingredients" and not ingredients:
+                return jsonify({"error": f"Recipe for {menu_item['name']} has no raw materials configured"}), 400
+            for ingredient in ingredients:
+                material_id = canonical_material_id(ingredient.get("material_id", ""))
+                required_quantity = float(ingredient.get("quantity", 0))
+                if material_id and required_quantity > 0:
+                    material_requirements[material_id] = material_requirements.get(material_id, 0) + required_quantity * quantity
 
     # Pull student profile for room/block (helps mess staff with delivery)
     profile_doc = db.collection("users").document(uid).get()
@@ -78,7 +101,39 @@ def place_order():
         "updated_at": firestore.SERVER_TIMESTAMP,
     }
     ref = db.collection("orders").document()
-    ref.set(order)
+    transaction = db.transaction()
+
+    @firestore.transactional
+    def reserve_inventory_and_create_order(transaction):
+        material_updates = []
+        dish_updates = []
+        for material_id, required_quantity in material_requirements.items():
+            material_ref = db.collection("raw_materials").document(material_id)
+            material_doc = material_ref.get(transaction=transaction)
+            if not material_doc.exists:
+                raise InsufficientInventory(f"Raw material '{material_id}' is not configured")
+            material = material_doc.to_dict()
+            available_quantity = float(material.get("quantity", 0))
+            if available_quantity < required_quantity:
+                raise InsufficientInventory(f"Not enough {material.get('name', material_id)} available")
+            material_updates.append((material_ref, available_quantity - required_quantity))
+        for item_id, required_quantity in dish_stock_requirements.items():
+            dish_ref = db.collection("menu_items").document(item_id)
+            dish_doc = dish_ref.get(transaction=transaction)
+            dish = dish_doc.to_dict() if dish_doc.exists else None
+            if not dish or float(dish.get("stock", 0)) < required_quantity:
+                raise InsufficientInventory(f"Not enough servings of {dish.get('name', item_id) if dish else item_id} available")
+            dish_updates.append((dish_ref, float(dish.get("stock", 0)) - required_quantity))
+        for material_ref, remaining_quantity in material_updates:
+            transaction.update(material_ref, {"quantity": remaining_quantity, "updated_at": firestore.SERVER_TIMESTAMP})
+        for dish_ref, remaining_quantity in dish_updates:
+            transaction.update(dish_ref, {"stock": remaining_quantity, "updated_at": firestore.SERVER_TIMESTAMP})
+        transaction.set(ref, order)
+
+    try:
+        reserve_inventory_and_create_order(transaction)
+    except InsufficientInventory as error:
+        return jsonify({"error": str(error)}), 400
 
     return jsonify({"message": "Order placed", "order_id": ref.id, "total_amount": total}), 201
 
