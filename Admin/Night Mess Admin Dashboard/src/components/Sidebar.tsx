@@ -2,7 +2,7 @@ import { useState } from "react";
 import {
   LayoutDashboard, Users, UtensilsCrossed, ClipboardList, CreditCard,
   Megaphone, MessageSquareWarning, BarChart3, Settings, Menu, X,
-  ChevronRight, Wifi, WifiOff
+  ChevronRight, Wifi, WifiOff, Sparkles
 } from "lucide-react";
 import { useStore } from "../store";
 
@@ -15,6 +15,7 @@ const NAV_ITEMS = [
   { id: "announcements", label: "Announcements", icon: Megaphone },
   { id: "complaints", label: "Complaints", icon: MessageSquareWarning },
   { id: "analytics", label: "Analytics", icon: BarChart3 },
+  { id: "prediction", label: "Crowd Forecast", icon: Sparkles },
   { id: "settings", label: "Settings", icon: Settings },
 ];
 

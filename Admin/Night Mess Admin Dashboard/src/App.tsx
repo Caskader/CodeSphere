@@ -9,9 +9,10 @@ import Payments from "./pages/Payments";
 import Announcements from "./pages/Announcements";
 import Complaints from "./pages/Complaints";
 import Analytics from "./pages/Analytics";
+import CrowdPrediction from "./pages/CrowdPrediction";
 import Settings from "./pages/Settings";
 
-type Page = "dashboard" | "queue" | "menu" | "orders" | "payments" | "announcements" | "complaints" | "analytics" | "settings";
+type Page = "dashboard" | "queue" | "menu" | "orders" | "payments" | "announcements" | "complaints" | "analytics" | "prediction" | "settings";
 
 function AppContent() {
   const [page, setPage] = useState<Page>("dashboard");
@@ -26,6 +27,7 @@ function AppContent() {
       case "announcements": return <Announcements />;
       case "complaints": return <Complaints />;
       case "analytics": return <Analytics />;
+      case "prediction": return <CrowdPrediction />;
       case "settings": return <Settings />;
       default: return <Dashboard onNavigate={(p) => setPage(p as Page)} />;
     }
