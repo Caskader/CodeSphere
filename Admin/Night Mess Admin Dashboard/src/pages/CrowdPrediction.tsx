@@ -107,8 +107,11 @@ export default function CrowdPrediction() {
     setRefreshed(true);
   };
   useEffect(() => { void refreshDemandForecast(); }, []);
+  const actualHistory = demandForecast?.crowd.history.slice(-7) || historical.map((point) => ({ day: point.day, actual: point.crowd }));
   const chartData = demandForecast ? [
-    ...demandForecast.crowd.history.slice(-7).map((point) => ({ time: point.day, actual: point.actual, forecast: point.actual, lower: point.actual, upper: point.actual })),
+    // Historical points contain only observed values. The forecast and its
+    // confidence range begin at the separate Tomorrow point.
+    ...actualHistory.map((point) => ({ time: point.day, actual: point.actual, forecast: null, lower: null, upper: null })),
     { time: "Tomorrow", actual: null, forecast: demandForecast.crowd.forecast, lower: demandForecast.crowd.lower, upper: demandForecast.crowd.upper },
   ] : forecast.data;
   const foodPlan = demandForecast?.dishes.map((dish) => ({
@@ -229,8 +232,8 @@ export default function CrowdPrediction() {
       </Card>
 
       <Card>
-        <div className="mb-4 flex items-center justify-between"><div><div className="text-xs font-semibold text-[#dce6f5]">Weekly demand pattern</div><div className="mt-0.5 text-[10px] text-[#5a7099]">Average dinner crowd from the last 7 corresponding days</div></div><Badge variant="muted" size="xs">HISTORICAL DATA</Badge></div>
-        <div className="grid grid-cols-7 gap-2">{historical.map((item) => { const height = Math.round((item.crowd / 160) * 100); const isPeak = item.crowd === 151; return <div key={item.day} className="group text-center"><div className="flex h-24 items-end justify-center rounded-md bg-[#080d1a] px-2"><div className={`w-full rounded-t-sm transition-all ${isPeak ? "bg-[#a78bfa]" : "bg-[#00c8ff50] group-hover:bg-[#00c8ff]"}`} style={{ height: `${height}%` }} /></div><div className="mt-2 text-[10px] mono text-[#5a7099]">{item.day}</div><div className={`mt-0.5 text-[10px] mono ${isPeak ? "text-[#a78bfa]" : "text-[#a0b4cc]"}`}>{item.crowd}</div></div>; })}</div>
+          <div className="mb-4 flex items-center justify-between"><div><div className="text-xs font-semibold text-[#dce6f5]">Weekly demand pattern</div><div className="mt-0.5 text-[10px] text-[#5a7099]">Actual crowd from the last 7 CSV days</div></div><Badge variant="muted" size="xs">ACTUAL DATA</Badge></div>
+        <div className="grid grid-cols-7 gap-2">{actualHistory.map((item) => { const maxCrowd = Math.max(...actualHistory.map((entry) => entry.actual), 1); const height = Math.round((item.actual / maxCrowd) * 100); const isPeak = item.actual === maxCrowd; return <div key={item.day} className="group text-center"><div className="flex h-24 items-end justify-center rounded-md bg-[#080d1a] px-2"><div className={`w-full rounded-t-sm transition-all ${isPeak ? "bg-[#a78bfa]" : "bg-[#00c8ff50] group-hover:bg-[#00c8ff]"}`} style={{ height: `${height}%` }} /></div><div className="mt-2 text-[10px] mono text-[#5a7099]">{item.day}</div><div className={`mt-0.5 text-[10px] mono ${isPeak ? "text-[#a78bfa]" : "text-[#a0b4cc]"}`}>{item.actual}</div></div>; })}</div>
       </Card>
     </div>
   );

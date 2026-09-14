@@ -88,8 +88,11 @@ def build_forecast(csv_path=DATA_FILE):
     ]
     raw_materials.sort(key=lambda material: material["name"])
     crowd_history = [
-        {"day": f"Day {index + 1}", "actual": round(total / AVERAGE_DISHES_PER_DINER)}
-        for index, total in enumerate(daily_dish_totals)
+        {
+            "day": str(row.get("Day") or f"Day {index + 1}"),
+            "actual": round(total / AVERAGE_DISHES_PER_DINER),
+        }
+        for index, (row, total) in enumerate(zip(rows, daily_dish_totals))
     ]
     forecast_diners = round(sum(dish["forecast_orders"] for dish in dishes) / AVERAGE_DISHES_PER_DINER)
     uncertainty = max(3, math.ceil(forecast_diners * 0.12))
