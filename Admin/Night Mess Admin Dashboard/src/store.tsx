@@ -33,6 +33,21 @@ export interface FoodItem {
   price: number;
   wastage: number;
   unit: string;
+  ingredients?: RecipeIngredient[];
+  inventoryMode?: "ingredients" | "dish_stock";
+}
+
+export interface RecipeIngredient {
+  materialId: string;
+  name: string;
+  quantity: number;
+}
+
+export interface RawMaterial {
+  id: string;
+  name: string;
+  quantity: number;
+  unit: string;
 }
 
 export interface Complaint {
@@ -95,6 +110,7 @@ export interface MessSettings {
 export interface AppState {
   orders: Order[];
   foodItems: FoodItem[];
+  rawMaterials: RawMaterial[];
   complaints: Complaint[];
   announcements: Announcement[];
   queue: QueueEntry[];
@@ -122,6 +138,8 @@ type Action =
   | { type: "ADD_ANNOUNCEMENT"; announcement: Omit<Announcement, "id" | "timestamp"> }
   | { type: "DELETE_ANNOUNCEMENT"; announcementId: string }
   | { type: "ADD_FOOD"; food: FoodItem }
+  | { type: "SET_RAW_MATERIALS"; rawMaterials: RawMaterial[] }
+  | { type: "ADD_RAW_MATERIAL"; rawMaterial: RawMaterial }
   | { type: "EDIT_FOOD"; food: FoodItem }
   | { type: "DELETE_FOOD"; foodId: string }
   | { type: "UPDATE_STOCK"; foodId: string; stock: number }
@@ -190,6 +208,8 @@ const makeInitialState = (): AppState => {
     { id: "FOOD012", name: "Raita", category: "Sides", stock: 90, maxStock: 120, availability: "available", price: 15, wastage: 8, unit: "bowls" },
   ];
 
+  const rawMaterials: RawMaterial[] = [];
+
   const complaints: Complaint[] = [
     { id: "CMP001", studentName: "Rohan Gupta", studentId: "STU007", category: "Food Quality", description: "The dal was undercooked today at lunch. Very hard and not properly seasoned.", status: "open", timestamp: daysAgo(0), priority: "high" },
     { id: "CMP002", studentName: "Meera Joshi", studentId: "STU008", category: "Hygiene", description: "Found a foreign object (plastic piece) in the biryani served on Wednesday.", status: "in-progress", timestamp: daysAgo(1), priority: "high" },
@@ -245,6 +265,7 @@ const makeInitialState = (): AppState => {
   return {
     orders,
     foodItems,
+    rawMaterials,
     complaints,
     announcements,
     queue,
@@ -371,6 +392,13 @@ function reducer(state: AppState, action: Action): AppState {
         ...state,
         foodItems: [...state.foodItems, action.food],
       };
+    case "SET_RAW_MATERIALS":
+      return { ...state, rawMaterials: action.rawMaterials };
+    case "ADD_RAW_MATERIAL":
+      return {
+        ...state,
+        rawMaterials: [...state.rawMaterials.filter((material) => material.id !== action.rawMaterial.id), action.rawMaterial],
+      };
     case "EDIT_FOOD":
       return {
         ...state,
@@ -461,6 +489,8 @@ interface StoreContextValue {
   state: AppState;
   dispatch: React.Dispatch<Action>;
   createFoodItem: (food: Omit<FoodItem, "id">) => Promise<boolean>;
+  createRawMaterial: (material: Omit<RawMaterial, "id">) => Promise<boolean>;
+  loadInventoryDefaults: () => Promise<boolean>;
   updateOrderStatus: (orderId: string, status: "preparing" | "completed" | "cancelled", rejectionReason?: string) => Promise<boolean>;
   verifyQR: (tokenId: string) => { status: QRStatus; order?: Order; message: string };
   sendNotification: (message: string) => void;
@@ -478,6 +508,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${ADMIN_TOKEN}` },
         body: JSON.stringify({
           ...food,
+          ingredients: (food.ingredients || []).map((ingredient) => ({
+            material_id: ingredient.materialId,
+            name: ingredient.name,
+            quantity: ingredient.quantity,
+          })),
+          inventory_mode: food.inventoryMode || "dish_stock",
           is_available: food.availability !== "unavailable",
         }),
       });
@@ -494,6 +530,63 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       return false;
     }
   };
+
+  const createRawMaterial = async (material: Omit<RawMaterial, "id">): Promise<boolean> => {
+    try {
+      const res = await fetch(`${API_BASE}/menu/inventory`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${ADMIN_TOKEN}` },
+        body: JSON.stringify(material),
+      });
+      if (!res.ok) return false;
+      const data = await res.json();
+      dispatch({ type: "ADD_RAW_MATERIAL", rawMaterial: { ...material, id: data.id } });
+      return true;
+    } catch (err) {
+      console.error("Failed to create raw material", err);
+      return false;
+    }
+  };
+
+  const loadInventoryDefaults = async (): Promise<boolean> => {
+    try {
+      const res = await fetch(`${API_BASE}/menu/inventory/defaults`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${ADMIN_TOKEN}` },
+      });
+      if (!res.ok) return false;
+      const materials = await fetch(`${API_BASE}/menu/inventory`, { headers: { Authorization: `Bearer ${ADMIN_TOKEN}` } });
+      if (materials.ok) {
+        const data = await materials.json();
+        dispatch({ type: "SET_RAW_MATERIALS", rawMaterials: data.map((material: any) => ({
+          id: material.id, name: material.name, quantity: Number(material.quantity || 0), unit: material.unit || "units",
+        })) });
+      }
+      return true;
+    } catch (err) {
+      console.error("Failed to load inventory defaults", err);
+      return false;
+    }
+  };
+
+  useEffect(() => {
+    const fetchRawMaterials = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/menu/inventory`, { headers: { Authorization: `Bearer ${ADMIN_TOKEN}` } });
+        if (!res.ok) return;
+        const data = await res.json();
+        dispatch({ type: "SET_RAW_MATERIALS", rawMaterials: data.map((material: any) => ({
+          id: material.id,
+          name: material.name,
+          quantity: Number(material.quantity || 0),
+          unit: material.unit || "units",
+        })) });
+      } catch (err) {
+        console.error("Failed to fetch raw materials", err);
+      }
+    };
+    fetchRawMaterials();
+  }, []);
 
   const updateOrderStatus = async (
     orderId: string,
@@ -604,7 +697,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <StoreContext.Provider value={{ state, dispatch, createFoodItem, updateOrderStatus, verifyQR, sendNotification }}>
+    <StoreContext.Provider value={{ state, dispatch, createFoodItem, createRawMaterial, loadInventoryDefaults, updateOrderStatus, verifyQR, sendNotification }}>
       {children}
     </StoreContext.Provider>
   );
