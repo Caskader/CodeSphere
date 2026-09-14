@@ -1,0 +1,10 @@
+{
+  "description": "This student dashboard provides real-time updates on mess status, crowd levels, and menu availability, enhancing dining efficiency and experience.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}
