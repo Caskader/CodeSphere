@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from "react";
-import type { CartItem, MenuItem, MealToken, Order, Page, UserProfile } from "../types";
+import type { CartItem, MenuItem, MealToken, Order, Page, UserProfile, Announcement } from "../types";
 import { MENU_ITEMS, STUDENT } from "../data/mockData";
 import { api, backendOrderToFrontendOrder } from "../services/api";
 
@@ -32,6 +32,7 @@ interface AppContextValue {
   addOrder: (o: Order) => void;
   newAnnouncementCount: number;
   setNewAnnouncementCount: (n: number) => void;
+  announcements: Announcement[];
   showCart: boolean;
   setShowCart: (v: boolean) => void;
   // Live Backend Additions
@@ -87,6 +88,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [activeToken, setActiveTokenState] = useState<MealToken | null>(getStoredToken);
   const [orders, setOrders] = useState<Order[]>(getStoredOrders);
   const [newAnnouncementCount, setNewAnnouncementCount] = useState(2);
+  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [showCart, setShowCart] = useState(false);
 
   // Backend state
@@ -95,6 +97,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [menuError, setMenuError] = useState<string | null>(null);
   const [ordersLoading, setOrdersLoading] = useState(false);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+
+  const refreshAnnouncements = useCallback(async () => {
+    try {
+      const loaded = await api.getAnnouncements();
+      setAnnouncements(loaded);
+      setNewAnnouncementCount(loaded.length);
+    } catch (err) {
+      console.warn("Could not load announcements from backend:", err);
+    }
+  }, []);
 
   // Fetch Menu from API
   const refreshMenu = useCallback(async () => {
@@ -155,7 +167,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     refreshMenu();
     refreshOrders();
     refreshProfile();
-  }, [refreshMenu, refreshOrders, refreshProfile]);
+    refreshAnnouncements();
+  }, [refreshMenu, refreshOrders, refreshProfile, refreshAnnouncements]);
 
   // Fetch real-time queue changes from backend
   const refreshQueueCount = useCallback(async () => {
@@ -320,6 +333,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       activeToken, setActiveToken,
       orders, addOrder,
       newAnnouncementCount, setNewAnnouncementCount,
+      announcements,
       showCart, setShowCart,
       // Backend additions
       menuItems,

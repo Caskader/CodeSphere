@@ -61,7 +61,7 @@ function AnnouncementForm({
 }
 
 export default function Announcements() {
-  const { state, dispatch } = useStore();
+  const { state, saveAnnouncement, setAnnouncementPublished, deleteAnnouncement } = useStore();
   const [showForm, setShowForm] = useState(false);
   const [editAnn, setEditAnn] = useState<Announcement | null>(null);
   const [search, setSearch] = useState("");
@@ -81,23 +81,17 @@ export default function Announcements() {
     return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
   });
 
-  const handleSaveNew = (data: Omit<Announcement, "id" | "timestamp">) => {
-    dispatch({ type: "ADD_ANNOUNCEMENT", announcement: data });
-    setShowForm(false);
+  const handleSaveNew = async (data: Omit<Announcement, "id" | "timestamp">) => {
+    if (await saveAnnouncement(data)) setShowForm(false);
   };
 
-  const handleSaveEdit = (data: Omit<Announcement, "id" | "timestamp">) => {
+  const handleSaveEdit = async (data: Omit<Announcement, "id" | "timestamp">) => {
     if (!editAnn) return;
-    dispatch({
-      type: "ADD_ANNOUNCEMENT",
-      announcement: data,
-    });
-    dispatch({ type: "DELETE_ANNOUNCEMENT", announcementId: editAnn.id });
-    setEditAnn(null);
+    if (await saveAnnouncement(data, editAnn.id)) setEditAnn(null);
   };
 
-  const handleDelete = (id: string) => {
-    if (confirm("Delete this announcement?")) dispatch({ type: "DELETE_ANNOUNCEMENT", announcementId: id });
+  const handleDelete = async (id: string) => {
+    if (confirm("Delete this announcement?")) await deleteAnnouncement(id);
   };
 
   return (
@@ -188,7 +182,7 @@ export default function Announcements() {
               {/* Actions */}
               <div className="flex items-center gap-1 flex-shrink-0">
                 <button
-                  onClick={() => dispatch({ type: ann.published ? "UNPUBLISH_ANNOUNCEMENT" : "PUBLISH_ANNOUNCEMENT", announcementId: ann.id })}
+                  onClick={() => { void setAnnouncementPublished(ann.id, !ann.published); }}
                   className={`p-1.5 rounded-md transition-colors ${ann.published ? "text-[#ffb300] hover:bg-[#ffb30015]" : "text-[#00e676] hover:bg-[#00e67615]"}`}
                   title={ann.published ? "Unpublish" : "Publish"}
                 >

@@ -33,10 +33,36 @@ export default function Payments() {
     { name: "Refunded", value: totalRefunded, color: "#ffb300" },
   ].filter((d) => d.value > 0);
 
-  const mealBreakdown = ["breakfast", "lunch", "dinner"].map((meal) => {
-    const mealOrders = paidOrders.filter((o) => o.mealType === meal && o.status === "collected");
-    return { meal: meal.charAt(0).toUpperCase() + meal.slice(1), amount: mealOrders.reduce((s, o) => s + o.amount, 0), count: mealOrders.length };
+  const categoriesForOrder = (order: typeof state.orders[number]) => {
+    if (order.cuisines?.length) return order.cuisines;
+    const categories = order.items.map((rawItem) => {
+      const itemName = rawItem.replace(/\s+x\d+$/i, "").trim().toLowerCase();
+      return state.foodItems.find((food) => {
+        const foodName = food.name.toLowerCase();
+        return itemName === foodName || itemName.includes(foodName) || foodName.includes(itemName);
+      })?.category;
+    }).filter((category): category is string => Boolean(category));
+    return [...new Set(categories)].length ? [...new Set(categories)] : ["Night Mess"];
+  };
+
+  const cuisineTotals = new Map<string, { amount: number; count: number }>();
+  paidOrders.filter((order) => order.status === "collected").forEach((order) => {
+    const cuisines = categoriesForOrder(order);
+    const amountPerCuisine = order.amount / cuisines.length;
+    cuisines.forEach((cuisine) => {
+      const current = cuisineTotals.get(cuisine) || { amount: 0, count: 0 };
+      cuisineTotals.set(cuisine, { amount: current.amount + amountPerCuisine, count: current.count + 1 });
+    });
   });
+  const cuisineBreakdown = [...cuisineTotals.entries()]
+    .map(([cuisine, totals]) => ({ cuisine, amount: Math.round(totals.amount), count: totals.count }))
+    .sort((a, b) => b.amount - a.amount)
+    .slice(0, 6);
+
+  const weeklyRevenue = state.revenueHistory.map((day) => ({
+    date: day.date,
+    total: day.breakfast + day.lunch + day.dinner,
+  }));
 
   const recentTransactions = state.orders
     .filter((o) => o.paymentStatus !== "refunded")
@@ -83,29 +109,30 @@ export default function Payments() {
           </div>
         </Card>
 
-        {/* Meal-wise revenue */}
+        {/* Cuisine revenue */}
         <Card>
-          <div className="text-xs font-medium text-[#dce6f5] mb-4 sans">Revenue by Meal</div>
+          <div className="text-xs font-medium text-[#dce6f5] mb-4 sans">Revenue by Cuisine</div>
           <ResponsiveContainer width="100%" height={160}>
-            <BarChart data={mealBreakdown} barSize={32}>
-              <XAxis dataKey="meal" tick={{ fontSize: 10, fill: "#5a7099", fontFamily: "DM Mono" }} axisLine={false} tickLine={false} />
+            <BarChart data={cuisineBreakdown} barSize={32}>
+              <XAxis dataKey="cuisine" tick={{ fontSize: 9, fill: "#5a7099", fontFamily: "DM Mono" }} axisLine={false} tickLine={false} />
               <YAxis tick={{ fontSize: 9, fill: "#3a4d6b", fontFamily: "DM Mono" }} axisLine={false} tickLine={false} tickFormatter={(v) => `₹${v}`} />
               <Tooltip content={<CustomTooltip />} />
               <Bar dataKey="amount" fill="#00c8ff" radius={[4, 4, 0, 0]} name="Revenue">
-                {mealBreakdown.map((_, i) => (
-                  <Cell key={i} fill={["#7c3aed", "#00c8ff", "#00e676"][i]} />
+                {cuisineBreakdown.map((_, i) => (
+                  <Cell key={i} fill={["#7c3aed", "#00c8ff", "#00e676", "#ffb300", "#ff3d71", "#a78bfa"][i % 6]} />
                 ))}
               </Bar>
             </BarChart>
           </ResponsiveContainer>
-          <div className="grid grid-cols-3 gap-2 mt-2">
-            {mealBreakdown.map((m, i) => (
-              <div key={m.meal} className="text-center p-2 rounded-lg bg-[#080d1a] border border-[#1a2540]">
-                <div className="text-[10px] mono" style={{ color: ["#7c3aed", "#00c8ff", "#00e676"][i] }}>{m.meal}</div>
-                <div className="text-xs mono text-[#dce6f5] font-bold">₹{m.amount}</div>
-                <div className="text-[9px] text-[#3a4d6b] mono">{m.count} orders</div>
+          <div className="grid grid-cols-2 gap-2 mt-2">
+            {cuisineBreakdown.map((item, i) => (
+              <div key={item.cuisine} className="text-center p-2 rounded-lg bg-[#080d1a] border border-[#1a2540]">
+                <div className="text-[10px] mono truncate" style={{ color: ["#7c3aed", "#00c8ff", "#00e676", "#ffb300", "#ff3d71", "#a78bfa"][i % 6] }}>{item.cuisine}</div>
+                <div className="text-xs mono text-[#dce6f5] font-bold">₹{item.amount}</div>
+                <div className="text-[9px] text-[#3a4d6b] mono">{item.count} orders</div>
               </div>
             ))}
+            {cuisineBreakdown.length === 0 && <div className="col-span-2 py-8 text-center text-[10px] text-[#3a4d6b]">No collected cuisine revenue yet</div>}
           </div>
         </Card>
       </div>
@@ -114,13 +141,11 @@ export default function Payments() {
       <Card>
         <div className="text-xs font-medium text-[#dce6f5] mb-4 sans">Weekly Revenue Trend</div>
         <ResponsiveContainer width="100%" height={160}>
-          <BarChart data={state.revenueHistory} barSize={20}>
+          <BarChart data={weeklyRevenue} barSize={20}>
             <XAxis dataKey="date" tick={{ fontSize: 9, fill: "#3a4d6b", fontFamily: "DM Mono" }} axisLine={false} tickLine={false} />
             <YAxis tick={{ fontSize: 9, fill: "#3a4d6b", fontFamily: "DM Mono" }} axisLine={false} tickLine={false} tickFormatter={(v) => `₹${(v / 1000).toFixed(0)}k`} />
             <Tooltip content={<CustomTooltip />} />
-            <Bar dataKey="breakfast" stackId="a" fill="#7c3aed" name="Breakfast" />
-            <Bar dataKey="lunch" stackId="a" fill="#00c8ff" name="Lunch" />
-            <Bar dataKey="dinner" stackId="a" fill="#00e676" radius={[2, 2, 0, 0]} name="Dinner" />
+            <Bar dataKey="total" fill="#00c8ff" radius={[2, 2, 0, 0]} name="Revenue" />
           </BarChart>
         </ResponsiveContainer>
       </Card>
@@ -132,7 +157,7 @@ export default function Payments() {
           <table className="w-full text-xs">
             <thead>
               <tr className="border-b border-[#1a2540]">
-                {["Token", "Student", "Meal", "Amount", "Status", "Payment", "Time"].map((h) => (
+                {["Token", "Student", "Cuisine", "Amount", "Status", "Payment", "Time"].map((h) => (
                   <th key={h} className="text-left py-2 px-3 text-[10px] mono text-[#3a4d6b] uppercase tracking-wider font-medium">{h}</th>
                 ))}
               </tr>
@@ -145,7 +170,7 @@ export default function Payments() {
                     <div className="text-[#dce6f5] font-medium">{o.studentName}</div>
                     <div className="text-[9px] text-[#5a7099] mono">{o.studentId}</div>
                   </td>
-                  <td className="py-2.5 px-3 capitalize text-[#a0b4cc]">{o.mealType}</td>
+                  <td className="py-2.5 px-3 text-[#a0b4cc]">{categoriesForOrder(o).join(", ")}</td>
                   <td className="py-2.5 px-3 mono text-[#dce6f5] font-medium">₹{o.amount}</td>
                   <td className="py-2.5 px-3">
                     <Badge

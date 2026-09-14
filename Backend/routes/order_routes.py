@@ -20,6 +20,7 @@ from flask import Blueprint, request, jsonify
 from firebase_admin import firestore
 from firebase_config import db
 from realtime_store import realtime_transactional
+from routes.menu_routes import DEFAULT_RECIPES
 from utils.auth_middleware import token_required, admin_required
 
 order_bp = Blueprint("orders", __name__, url_prefix="/api/orders")
@@ -34,6 +35,15 @@ class InsufficientInventory(Exception):
 def canonical_material_id(material_id):
     value = str(material_id).strip().lower().replace(" ", "-")
     return {"breads": "bread", "tomatoes": "tomato", "tomatos": "tomato", "potatoes": "potato", "carrots": "carrot", "pastas": "pasta", "cheeses": "cheese", "rices": "rice", "onions": "onion", "paneers": "paneer", "flours": "flour", "oils": "oil"}.get(value, value)
+
+
+def default_ingredients_for(item):
+    """Use the bundled recipe when an older menu record has no ingredients."""
+    recipe = DEFAULT_RECIPES.get(str(item.get("name", "")).strip().lower(), [])
+    return [
+        {"material_id": material_id, "name": name, "quantity": quantity}
+        for material_id, name, quantity in recipe
+    ]
 
 
 @order_bp.route("", methods=["POST"])
@@ -82,7 +92,7 @@ def place_order():
         if inventory_mode == "dish_stock":
             dish_stock_requirements[item_id] = dish_stock_requirements.get(item_id, 0) + quantity
         else:
-            ingredients = menu_item.get("ingredients", [])
+            ingredients = menu_item.get("ingredients") or default_ingredients_for(menu_item)
             if inventory_mode == "ingredients" and not ingredients:
                 return jsonify({"error": f"Recipe for {menu_item['name']} has no raw materials configured"}), 400
             for ingredient in ingredients:

@@ -22,7 +22,7 @@ function QRStatusDisplay({ status, order, message }: { status: QRStatus; order?:
           {order && (
             <div className="mt-1 text-[10px] text-[#5a7099] mono space-x-3">
               <span>ID: {order.studentId}</span>
-              <span>Meal: {order.mealType}</span>
+              <span>Cuisine: {order.cuisines?.join(", ") || "Night Mess"}</span>
               <span>Items: {order.items.length}</span>
             </div>
           )}
@@ -33,12 +33,30 @@ function QRStatusDisplay({ status, order, message }: { status: QRStatus; order?:
 }
 
 export default function LiveQueue() {
-  const { state, dispatch, verifyQR } = useStore();
+  const { state, dispatch, verifyQR, updateOrderStatus } = useStore();
   const [qrInput, setQrInput] = useState("");
   const [qrResult, setQrResult] = useState<{ status: QRStatus; order?: Order; message: string } | null>(null);
   const [search, setSearch] = useState("");
 
-  const activeQueue = state.queue.filter((q) => q.status !== "done");
+  // Orders are the server-backed source of truth. Backfill any pending or
+  // accepted order that is missing from the local queue (for example after a
+  // stale localStorage snapshot or while the polling reducer catches up).
+  const queueOrderIds = new Set(state.queue.map((entry) => entry.orderId));
+  const missingOrderQueue = state.orders
+    .filter((order) => (order.status === "pending" || order.status === "accepted") && !queueOrderIds.has(order.id))
+    .map((order, index) => ({
+      id: `order-${order.id}`,
+      studentName: order.studentName,
+      studentId: order.studentId,
+      tokenId: order.tokenId,
+      orderId: order.id,
+      position: state.queue.length + index + 1,
+      mealType: order.mealType,
+      estimatedWait: (state.queue.length + index + 1) * 3,
+      status: "waiting" as const,
+      joinedAt: order.timestamp,
+    }));
+  const activeQueue = [...state.queue, ...missingOrderQueue].filter((q) => q.status !== "done");
   const filtered = activeQueue.filter((q) =>
     q.studentName.toLowerCase().includes(search.toLowerCase()) ||
     q.tokenId.toLowerCase().includes(search.toLowerCase()) ||
@@ -58,12 +76,7 @@ export default function LiveQueue() {
     setQrInput("");
   };
 
-  const handleRemove = (queueId: string) => {
-    dispatch({ type: "REMOVE_FROM_QUEUE", queueId });
-  };
-
-  const serving = state.queue.filter((q) => q.status === "serving").length;
-  const waiting = state.queue.filter((q) => q.status === "waiting").length;
+  const serving = activeQueue.filter((q) => q.status === "serving").length;
   const avgWait = activeQueue.length > 0 ? Math.round(activeQueue.reduce((s, q) => s + q.estimatedWait, 0) / activeQueue.length) : 0;
 
   return (
@@ -151,6 +164,10 @@ export default function LiveQueue() {
               </div>
             )}
             {filtered.map((entry) => (
+              (() => {
+                const order = state.orders.find((candidate) => candidate.id === entry.orderId);
+                const isPending = order?.status === "pending";
+                return (
               <div
                 key={entry.id}
                 className={`flex items-center gap-3 p-3 rounded-lg border transition-colors ${
@@ -170,8 +187,8 @@ export default function LiveQueue() {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
                     <span className="text-xs font-medium text-[#dce6f5] truncate">{entry.studentName}</span>
-                    <Badge variant={entry.status === "serving" ? "success" : "muted"} size="xs">
-                      {entry.status.toUpperCase()}
+                    <Badge variant={isPending ? "warning" : entry.status === "serving" ? "success" : "muted"} size="xs">
+                      {isPending ? "PENDING" : entry.status.toUpperCase()}
                     </Badge>
                   </div>
                   <div className="flex items-center gap-3 mt-0.5 text-[10px] mono text-[#5a7099]">
@@ -179,7 +196,7 @@ export default function LiveQueue() {
                     <span className="text-[#3a4d6b]">·</span>
                     <span>{entry.tokenId}</span>
                     <span className="text-[#3a4d6b]">·</span>
-                    <span className="capitalize">{entry.mealType}</span>
+                    <span>{state.orders.find((order) => order.id === entry.orderId)?.cuisines?.join(", ") || "Night Mess"}</span>
                   </div>
                 </div>
 
@@ -192,25 +209,21 @@ export default function LiveQueue() {
                     </div>
                   </div>
                   <div className="flex gap-1">
-                    <Button
-                      variant="success"
-                      size="xs"
-                      onClick={() => {
-                        dispatch({ type: "MARK_COLLECTED", orderId: entry.orderId });
-                      }}
-                    >
+                    {isPending ? <>
+                      <Button variant="success" size="xs" onClick={() => { void updateOrderStatus(entry.orderId, "preparing"); }}>
+                        ✓ Accept
+                      </Button>
+                      <Button variant="danger" size="xs" onClick={() => { void updateOrderStatus(entry.orderId, "cancelled", "Rejected from live queue"); }}>
+                        ✗ Reject
+                      </Button>
+                    </> : <Button variant="success" size="xs" onClick={() => { void updateOrderStatus(entry.orderId, "completed"); }}>
                       ✓ Collect
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="xs"
-                      onClick={() => handleRemove(entry.id)}
-                    >
-                      ✗
-                    </Button>
+                    </Button>}
                   </div>
                 </div>
               </div>
+                );
+              })()
             ))}
           </div>
         </Card>

@@ -13,6 +13,7 @@ export interface Order {
   studentName: string;
   studentId: string;
   mealType: MealType;
+  cuisines?: string[];
   items: string[];
   status: OrderStatus;
   paymentStatus: PaymentStatus;
@@ -143,6 +144,7 @@ export interface AppState {
 
 type Action =
   | { type: "SET_ORDERS"; orders: Order[] }
+  | { type: "SET_ANNOUNCEMENTS"; announcements: Announcement[] }
   | { type: "ACCEPT_ORDER"; orderId: string }
   | { type: "REJECT_ORDER"; orderId: string; reason: string }
   | { type: "MARK_COLLECTED"; orderId: string }
@@ -152,6 +154,7 @@ type Action =
   | { type: "PUBLISH_ANNOUNCEMENT"; announcementId: string }
   | { type: "UNPUBLISH_ANNOUNCEMENT"; announcementId: string }
   | { type: "ADD_ANNOUNCEMENT"; announcement: Omit<Announcement, "id" | "timestamp"> }
+  | { type: "UPSERT_ANNOUNCEMENT"; announcement: Announcement }
   | { type: "DELETE_ANNOUNCEMENT"; announcementId: string }
   | { type: "ADD_FOOD"; food: FoodItem }
   | { type: "SET_RAW_MATERIALS"; rawMaterials: RawMaterial[] }
@@ -313,7 +316,9 @@ function reducer(state: AppState, action: Action): AppState {
       // The API is the source of truth. Keep the local serving/waiting state
       // for known orders, add newly accepted orders, and remove completed or
       // cancelled orders from the live queue.
-      const queuedOrders = action.orders.filter((order) => order.status === "accepted");
+      // Pending orders are already in the live pickup queue; accepted orders
+      // remain there while they are being prepared.
+      const queuedOrders = action.orders.filter((order) => order.status === "pending" || order.status === "accepted");
       const queuedByOrder = new Map(state.queue.map((entry) => [entry.orderId, entry]));
       const nextQueue = queuedOrders.map((order) => queuedByOrder.get(order.id) || {
         id: "Q" + generateId(),
@@ -333,6 +338,8 @@ function reducer(state: AppState, action: Action): AppState {
       }));
       return { ...state, orders: action.orders, queue: nextQueue };
     }
+    case "SET_ANNOUNCEMENTS":
+      return { ...state, announcements: action.announcements };
     case "ACCEPT_ORDER": {
       const order = state.orders.find((o) => o.id === action.orderId);
       if (!order) return state;
@@ -419,6 +426,14 @@ function reducer(state: AppState, action: Action): AppState {
         announcements: [
           { ...action.announcement, id: "ANN" + generateId(), timestamp: now() },
           ...state.announcements,
+        ],
+      };
+    case "UPSERT_ANNOUNCEMENT":
+      return {
+        ...state,
+        announcements: [
+          action.announcement,
+          ...state.announcements.filter((announcement) => announcement.id !== action.announcement.id),
         ],
       };
     case "DELETE_ANNOUNCEMENT":
@@ -530,6 +545,11 @@ interface StoreContextValue {
   createFoodItem: (food: Omit<FoodItem, "id">) => Promise<boolean>;
   createRawMaterial: (material: Omit<RawMaterial, "id">) => Promise<boolean>;
   loadInventoryDefaults: () => Promise<boolean>;
+  loadAnnouncements: () => Promise<boolean>;
+  saveAnnouncement: (data: Omit<Announcement, "id" | "timestamp">, id?: string) => Promise<boolean>;
+  setAnnouncementPublished: (id: string, published: boolean) => Promise<boolean>;
+  deleteAnnouncement: (id: string) => Promise<boolean>;
+  createUser: (user: { name: string; email: string; password: string; student_id: string; room_number: string; hostel_block: string; branch: string; year: string }) => Promise<{ success: boolean; error?: string }>;
   getDemandForecast: () => Promise<DemandForecast | null>;
   updateOrderStatus: (orderId: string, status: "preparing" | "completed" | "cancelled", rejectionReason?: string) => Promise<boolean>;
   verifyQR: (tokenId: string) => { status: QRStatus; order?: Order; message: string };
@@ -621,6 +641,85 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const loadAnnouncements = async (): Promise<boolean> => {
+    try {
+      const res = await fetch(`${API_BASE}/announcements/admin`, {
+        headers: { Authorization: `Bearer ${ADMIN_TOKEN}` },
+      });
+      if (!res.ok) return false;
+      dispatch({ type: "SET_ANNOUNCEMENTS", announcements: await res.json() });
+      return true;
+    } catch (err) {
+      console.error("Failed to fetch announcements", err);
+      return false;
+    }
+  };
+
+  const saveAnnouncement = async (
+    data: Omit<Announcement, "id" | "timestamp">,
+    id?: string,
+  ): Promise<boolean> => {
+    try {
+      const res = await fetch(`${API_BASE}/announcements${id ? `/${id}` : ""}`, {
+        method: id ? "PATCH" : "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${ADMIN_TOKEN}` },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) return false;
+      dispatch({ type: "UPSERT_ANNOUNCEMENT", announcement: await res.json() });
+      return true;
+    } catch (err) {
+      console.error("Failed to save announcement", err);
+      return false;
+    }
+  };
+
+  const setAnnouncementPublished = async (id: string, published: boolean): Promise<boolean> => {
+    try {
+      const res = await fetch(`${API_BASE}/announcements/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${ADMIN_TOKEN}` },
+        body: JSON.stringify({ published }),
+      });
+      if (!res.ok) return false;
+      dispatch({ type: "UPSERT_ANNOUNCEMENT", announcement: await res.json() });
+      return true;
+    } catch (err) {
+      console.error("Failed to update announcement publication", err);
+      return false;
+    }
+  };
+
+  const deleteAnnouncement = async (id: string): Promise<boolean> => {
+    try {
+      const res = await fetch(`${API_BASE}/announcements/${id}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${ADMIN_TOKEN}` },
+      });
+      if (!res.ok) return false;
+      dispatch({ type: "DELETE_ANNOUNCEMENT", announcementId: id });
+      return true;
+    } catch (err) {
+      console.error("Failed to delete announcement", err);
+      return false;
+    }
+  };
+
+  const createUser = async (user: { name: string; email: string; password: string; student_id: string; room_number: string; hostel_block: string; branch: string; year: string }): Promise<{ success: boolean; error?: string }> => {
+    try {
+      const res = await fetch(`${API_BASE}/auth/admin/users`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${ADMIN_TOKEN}` },
+        body: JSON.stringify(user),
+      });
+      const body = await res.json().catch(() => ({}));
+      return res.ok ? { success: true } : { success: false, error: body.detail ? `${body.error || "Could not create user"}: ${body.detail}` : (body.error || "Could not create user") };
+    } catch (err) {
+      console.error("Failed to create user", err);
+      return { success: false, error: "Could not connect to the backend" };
+    }
+  };
+
   useEffect(() => {
     const fetchRawMaterials = async () => {
       try {
@@ -638,6 +737,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       }
     };
     fetchRawMaterials();
+  }, []);
+
+  useEffect(() => {
+    void loadAnnouncements();
   }, []);
 
   const updateOrderStatus = async (
@@ -685,6 +788,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             studentName: o.student_name,
             studentId: o.student_id,
             mealType: o.meal_type.toLowerCase(),
+            cuisines: [...new Set((o.items || []).map((item: any) => item.category).filter(Boolean))],
             items: o.items.map((i: any) => `${i.name} x${i.quantity}`),
             status: o.status === "placed" ? "pending" : (o.status === "preparing" || o.status === "ready" ? "accepted" : (o.status === "completed" ? "collected" : "rejected")),
             paymentStatus: "paid",
@@ -749,7 +853,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <StoreContext.Provider value={{ state, dispatch, createFoodItem, createRawMaterial, loadInventoryDefaults, getDemandForecast, updateOrderStatus, verifyQR, sendNotification }}>
+    <StoreContext.Provider value={{ state, dispatch, createFoodItem, createRawMaterial, loadInventoryDefaults, loadAnnouncements, saveAnnouncement, setAnnouncementPublished, deleteAnnouncement, createUser, getDemandForecast, updateOrderStatus, verifyQR, sendNotification }}>
       {children}
     </StoreContext.Provider>
   );

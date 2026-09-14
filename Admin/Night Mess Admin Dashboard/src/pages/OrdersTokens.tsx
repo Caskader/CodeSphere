@@ -68,7 +68,7 @@ export default function OrdersTokens() {
   const { state, updateOrderStatus } = useStore();
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
-  const [mealFilter, setMealFilter] = useState("all");
+  const [cuisineFilter, setCuisineFilter] = useState("all");
   const [payFilter, setPayFilter] = useState("all");
   const [rejectModal, setRejectModal] = useState<{ open: boolean; orderId: string }>({ open: false, orderId: "" });
   const [rejectReason, setRejectReason] = useState("");
@@ -83,9 +83,9 @@ export default function OrdersTokens() {
       o.tokenId.toLowerCase().includes(search.toLowerCase()) ||
       o.id.toLowerCase().includes(search.toLowerCase());
     const matchStatus = statusFilter === "all" || o.status === statusFilter;
-    const matchMeal = mealFilter === "all" || o.mealType === mealFilter;
+    const matchCuisine = cuisineFilter === "all" || (o.cuisines || []).includes(cuisineFilter);
     const matchPay = payFilter === "all" || o.paymentStatus === payFilter;
-    return matchSearch && matchStatus && matchMeal && matchPay;
+    return matchSearch && matchStatus && matchCuisine && matchPay;
   });
 
   const counts = {
@@ -95,6 +95,10 @@ export default function OrdersTokens() {
     rejected: state.orders.filter((o) => o.status === "rejected").length,
   };
   const preparationRows = createPreparationRows(filtered);
+  const cuisines = [...new Set([
+    ...state.orders.flatMap((order) => order.cuisines || []),
+    ...state.foodItems.map((food) => food.category),
+  ])].filter(Boolean).sort();
 
   const changeOrderStatuses = async (
     orders: Order[],
@@ -154,11 +158,9 @@ export default function OrdersTokens() {
             <option value="collected">Collected</option>
             <option value="rejected">Rejected</option>
           </Select>
-          <Select value={mealFilter} onChange={(e) => setMealFilter(e.target.value)} className="w-32">
-            <option value="all">All Meals</option>
-            <option value="breakfast">Breakfast</option>
-            <option value="lunch">Lunch</option>
-            <option value="dinner">Dinner</option>
+              <Select value={cuisineFilter} onChange={(e) => setCuisineFilter(e.target.value)} className="w-36">
+                <option value="all">All Cuisines</option>
+                {cuisines.map((cuisine) => <option key={cuisine} value={cuisine}>{cuisine}</option>)}
           </Select>
           <Select value={payFilter} onChange={(e) => setPayFilter(e.target.value)} className="w-32">
             <option value="all">All Payments</option>
@@ -176,7 +178,7 @@ export default function OrdersTokens() {
           <table className="w-full text-xs">
             <thead>
               <tr className="border-b border-[#1a2540]">
-                {["Token", "Student", "Meal", "Items", "Amount", "Payment", "Status", "Actions"].map((h) => (
+                {["Token", "Student", "Cuisine", "Items", "Amount", "Payment", "Status", "Actions"].map((h) => (
                   <th key={h} className="text-left py-2 px-2 text-[10px] mono text-[#3a4d6b] uppercase tracking-wider font-medium whitespace-nowrap">{h}</th>
                 ))}
               </tr>
@@ -203,7 +205,7 @@ export default function OrdersTokens() {
                     <div className="text-[9px] text-[#5a7099] mono">{isBatch ? orders.map((batchOrder) => batchOrder.studentId).join(", ") : order.studentId}</div>
                   </td>
                   <td className="py-2.5 px-2">
-                    <span className="capitalize text-[#a0b4cc]">{order.mealType}</span>
+                    <span className="text-[#a0b4cc]">{order.cuisines?.join(", ") || "Night Mess"}</span>
                   </td>
                   <td className="py-2.5 px-2">
                     <div className="text-[#5a7099] truncate max-w-[140px]">{isBatch ? batchItemsLabel(orders) : order.items.join(", ")}</div>
@@ -301,7 +303,7 @@ export default function OrdersTokens() {
                 ["Token ID", detailOrder.tokenId],
                 ["Student", detailOrder.studentName],
                 ["Student ID", detailOrder.studentId],
-                ["Meal", detailOrder.mealType],
+                ["Cuisine", detailOrder.cuisines?.join(", ") || "Night Mess"],
                 ["Amount", `₹${detailOrder.amount}`],
               ].map(([k, v]) => (
                 <div key={k}>

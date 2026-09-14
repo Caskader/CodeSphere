@@ -10,6 +10,7 @@ from routes.menu_routes import menu_bp
 from routes.order_routes import order_bp
 from routes.review_routes import review_bp
 from routes.prediction_routes import prediction_bp
+from routes.announcement_routes import announcement_bp
 
 
 def create_app():
@@ -22,6 +23,7 @@ def create_app():
     app.register_blueprint(order_bp)
     app.register_blueprint(review_bp)
     app.register_blueprint(prediction_bp)
+    app.register_blueprint(announcement_bp)
 
     @app.route("/api/health", methods=["GET"])
     def health():

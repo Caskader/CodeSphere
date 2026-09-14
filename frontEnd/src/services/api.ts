@@ -1,4 +1,4 @@
-import type { MenuItem, Order, MealToken, UserProfile, Review } from "../types";
+import type { MenuItem, Order, MealToken, UserProfile, Review, Announcement } from "../types";
 import { STUDENT } from "../data/mockData";
 
 const API_BASE = import.meta.env.VITE_API_URL || "/api";
@@ -268,6 +268,19 @@ export const api = {
     return apiFetch<{ message: string; id: string; status: string }>(`/orders/${id}/cancel`, {
       method: "POST",
     });
+  },
+
+  // --- Reviews ---
+  async getAnnouncements(): Promise<Announcement[]> {
+    const announcements = await apiFetch<any[]>("/announcements");
+    return announcements.map((announcement) => ({
+      id: announcement.id,
+      title: announcement.title,
+      message: announcement.content || announcement.message || "",
+      type: announcement.category === "Maintenance" ? "warning" : announcement.category === "Holiday" ? "success" : "info",
+      time: announcement.timestamp || "",
+      isNew: Boolean(announcement.published),
+    }));
   },
 
   // --- Reviews ---

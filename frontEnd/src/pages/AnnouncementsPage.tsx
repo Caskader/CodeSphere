@@ -1,6 +1,5 @@
 import React from "react";
 import { useApp } from "../context/AppContext";
-import { ANNOUNCEMENTS } from "../data/mockData";
 
 const TYPE_STYLE: Record<string, { color: string; bg: string; icon: string }> = {
   warning: { color: "#EAB308", bg: "rgba(234,179,8,0.1)", icon: "⚠️" },
@@ -10,7 +9,7 @@ const TYPE_STYLE: Record<string, { color: string; bg: string; icon: string }> = 
 };
 
 export default function AnnouncementsPage() {
-  const { newAnnouncementCount, setNewAnnouncementCount } = useApp();
+  const { announcements, newAnnouncementCount, setNewAnnouncementCount } = useApp();
 
   React.useEffect(() => {
     setNewAnnouncementCount(0);
@@ -32,7 +31,7 @@ export default function AnnouncementsPage() {
       )}
 
       <div className="space-y-3">
-        {ANNOUNCEMENTS.map(ann => {
+        {announcements.map(ann => {
           const style = TYPE_STYLE[ann.type] || TYPE_STYLE.info;
           return (
             <div key={ann.id} className="glass-card rounded-2xl p-4 transition-all"

@@ -47,9 +47,13 @@ def inventory_available(item, materials):
     """Whether one serving can be prepared from the current raw inventory."""
     if item.get("inventory_mode") == "dish_stock":
         return float(item.get("stock", 0)) > 0
-    if item.get("inventory_mode") == "ingredients" and not item.get("ingredients"):
+    ingredients = item.get("ingredients") or [
+        {"material_id": material_id, "name": name, "quantity": quantity}
+        for material_id, name, quantity in DEFAULT_RECIPES.get(str(item.get("name", "")).strip().lower(), [])
+    ]
+    if item.get("inventory_mode") == "ingredients" and not ingredients:
         return False
-    for ingredient in item.get("ingredients", []):
+    for ingredient in ingredients:
         material = materials.get(canonical_material_id(ingredient.get("material_id", "")))
         if not material or float(material.get("quantity", 0)) < float(ingredient.get("quantity", 0)):
             return False

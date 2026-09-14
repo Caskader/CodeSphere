@@ -225,6 +225,45 @@ def make_admin():
     return jsonify({"message": f"{target_uid} is now an admin"}), 200
 
 
+@auth_bp.route("/admin/users", methods=["POST"])
+@admin_required
+def create_user_by_admin():
+    """Create a student Auth account and its RTDB profile from the dashboard."""
+    data = request.get_json(force=True) or {}
+    email = str(data.get("email", "")).strip().lower()
+    password = str(data.get("password", ""))
+    name = str(data.get("name", "")).strip()
+    if not email or not password or not name:
+        return jsonify({"error": "name, email and password are required"}), 400
+    if len(password) < 6:
+        return jsonify({"error": "password must be at least 6 characters"}), 400
+
+    try:
+        user_record = firebase_auth.create_user(email=email, password=password, display_name=name)
+    except Exception as error:
+        return jsonify({"error": "Could not create user", "detail": str(error)}), 400
+
+    profile = {
+        "name": name,
+        "email": email,
+        "student_id": str(data.get("student_id", "")).strip() or "Not assigned",
+        "room_number": str(data.get("room_number", "")).strip() or "Not assigned",
+        "hostel_block": str(data.get("hostel_block", "")).strip() or "A-Block",
+        "branch": str(data.get("branch", "")).strip() or "B.Tech CSE",
+        "year": str(data.get("year", "")).strip() or "2nd Year",
+        "mess_balance": 1240,
+        "role": "student",
+        "created_at": firestore_server_timestamp(),
+    }
+    profile_ref = db.collection("users").document(user_record.uid)
+    profile_ref.set(profile)
+    # Read back the normalized value so RTDB timestamp conversion (and any
+    # future storage-specific conversions) never leaks an SDK sentinel into
+    # Flask's JSON response.
+    saved_profile = profile_ref.get().to_dict()
+    return jsonify({"message": "User created successfully", "uid": user_record.uid, "user": {"uid": user_record.uid, **saved_profile}}), 201
+
+
 def firestore_server_timestamp():
     from firebase_admin import firestore
     return firestore.SERVER_TIMESTAMP

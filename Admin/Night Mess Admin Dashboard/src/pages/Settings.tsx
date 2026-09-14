@@ -1,15 +1,19 @@
 import { useState } from "react";
 import { useStore } from "../store";
 import { Card, Button, Input, PageHeader, Select } from "../components/ui";
-import { Settings as SettingsIcon, Bell, Database, Shield, RotateCcw, Save, Wifi, WifiOff } from "lucide-react";
+import { Settings as SettingsIcon, Bell, Database, Shield, RotateCcw, Save, Wifi, WifiOff, UserPlus } from "lucide-react";
 
 export default function Settings() {
-  const { state, dispatch } = useStore();
+  const { state, dispatch, createUser } = useStore();
   const [form, setForm] = useState({ ...state.settings });
   const [saved, setSaved] = useState(false);
   const [notifMsg, setNotifMsg] = useState("");
+  const [userForm, setUserForm] = useState({ name: "", email: "", password: "", student_id: "", room_number: "", hostel_block: "A-Block", branch: "B.Tech CSE", year: "2nd Year" });
+  const [userMessage, setUserMessage] = useState("");
+  const [userSaving, setUserSaving] = useState(false);
 
   const set = (k: string, v: any) => setForm((f) => ({ ...f, [k]: v }));
+  const setUser = (k: string, v: string) => setUserForm((f) => ({ ...f, [k]: v }));
 
   const handleSave = () => {
     dispatch({ type: "UPDATE_SETTINGS", settings: form });
@@ -28,6 +32,19 @@ export default function Settings() {
     dispatch({ type: "ADD_NOTIFICATION", message: notifMsg, notifType: "info" });
     setNotifMsg("");
     alert(`Notification sent: "${notifMsg}"`);
+  };
+
+  const handleCreateUser = async () => {
+    setUserMessage("");
+    setUserSaving(true);
+    const result = await createUser(userForm);
+    setUserSaving(false);
+    if (!result.success) {
+      setUserMessage(result.error || "Could not create user");
+      return;
+    }
+    setUserMessage("User created successfully. They can now sign in with the email and password.");
+    setUserForm({ name: "", email: "", password: "", student_id: "", room_number: "", hostel_block: "A-Block", branch: "B.Tech CSE", year: "2nd Year" });
   };
 
   return (
@@ -219,6 +236,30 @@ export default function Settings() {
           </div>
         </Card>
       </div>
+
+      {/* User management */}
+      <Card className="border-[#00c8ff30]">
+        <div className="flex items-center gap-2 mb-4">
+          <UserPlus size={14} className="text-[#00c8ff]" />
+          <div><div className="text-xs font-semibold text-[#dce6f5]">Add Student User</div><div className="text-[10px] text-[#5a7099]">Creates a Firebase login and matching Realtime Database profile.</div></div>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <Input label="Full Name" value={userForm.name} onChange={(e) => setUser("name", e.target.value)} placeholder="Student name" />
+          <Input label="Email" type="email" value={userForm.email} onChange={(e) => setUser("email", e.target.value)} placeholder="student@university.edu" />
+          <Input label="Temporary Password" type="password" value={userForm.password} onChange={(e) => setUser("password", e.target.value)} placeholder="At least 6 characters" />
+          <Input label="Student ID" value={userForm.student_id} onChange={(e) => setUser("student_id", e.target.value)} placeholder="24BCE1234" />
+          <Input label="Room Number" value={userForm.room_number} onChange={(e) => setUser("room_number", e.target.value)} placeholder="A-Block, Room 214" />
+          <Input label="Hostel Block" value={userForm.hostel_block} onChange={(e) => setUser("hostel_block", e.target.value)} />
+          <Input label="Branch" value={userForm.branch} onChange={(e) => setUser("branch", e.target.value)} />
+          <Input label="Year" value={userForm.year} onChange={(e) => setUser("year", e.target.value)} />
+        </div>
+        <div className="mt-3 flex items-center gap-3">
+          <Button variant="primary" size="sm" onClick={() => { void handleCreateUser(); }} disabled={userSaving || !userForm.name.trim() || !userForm.email.trim() || userForm.password.length < 6}>
+            <span className="flex items-center gap-1.5"><UserPlus size={12} /> {userSaving ? "Creating..." : "Create User"}</span>
+          </Button>
+          {userMessage && <span className={`text-[10px] ${userMessage.startsWith("User created") ? "text-[#00e676]" : "text-[#ff3d71]"}`}>{userMessage}</span>}
+        </div>
+      </Card>
 
       {/* Data Management */}
       <Card className="border-[#ff3d7130]">

@@ -77,6 +77,7 @@ All authenticated routes expect `Authorization: Bearer <id_token>`.
 | POST | `/api/auth/login` | – | Email/password login → returns `id_token` |
 | GET | `/api/auth/me` | student | Get own profile |
 | POST | `/api/auth/make-admin` | admin | Promote another user to mess staff |
+| POST | `/api/auth/admin/users` | admin | Create a student Auth account and profile |
 
 ### Menu
 | Method | Route | Auth | Description |
@@ -103,6 +104,15 @@ All authenticated routes expect `Authorization: Bearer <id_token>`.
 |---|---|---|---|
 | GET | `/api/menu/<item_id>/reviews` | – | List reviews for an item |
 | POST | `/api/menu/<item_id>/reviews` | student | Add a 1–5 rating + comment |
+
+### Announcements
+| Method | Route | Auth | Description |
+|---|---|---|---|
+| GET | `/api/announcements` | – | Published announcements for students |
+| GET | `/api/announcements/admin` | admin | All announcements, including drafts |
+| POST | `/api/announcements` | admin | Create an announcement in Realtime Database |
+| PATCH | `/api/announcements/<id>` | admin | Edit or publish/unpublish an announcement |
+| DELETE | `/api/announcements/<id>` | admin | Delete an announcement |
 
 ### Forecasting
 | Method | Route | Auth | Description |

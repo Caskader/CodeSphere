@@ -95,7 +95,8 @@ export default function CrowdPrediction() {
   const [staffPlanApplied, setStaffPlanApplied] = useState(false);
   const forecast = forecastByMeal[meal];
   const expectedCrowd = demandForecast?.crowd.forecast ?? forecast.peak;
-  const currentQueue = state.queue.filter((entry) => entry.status !== "done").length;
+  const currentQueue = state.orders.filter((order) => order.status === "pending" || order.status === "accepted").length;
+  const queueWait = currentQueue > 0 ? Math.max(3, currentQueue * 3) : 0;
   const capacityUse = Math.round((expectedCrowd / state.settings.maxCapacity) * 100);
   const status = capacityUse > 85 ? "High demand expected" : "Capacity looks healthy";
   const recommendation = capacityUse > 85 ? "Open counter 2 before the peak window" : "One counter can handle the predicted load";
@@ -138,7 +139,7 @@ export default function CrowdPrediction() {
             </div>
           </div>
           <div className="flex items-center gap-2 rounded-lg border border-[#1a2540] bg-[#080d1a] p-1">
-            {(["Breakfast", "Lunch", "Dinner"] as Meal[]).map((option) => <button key={option} onClick={() => { setMeal(option); setRefreshed(false); setPlanApplied(false); setStaffPlanApplied(false); }} className={`rounded-md px-3 py-1.5 text-[10px] font-medium mono transition-colors ${meal === option ? "bg-[#00c8ff] text-[#07111e]" : "text-[#5a7099] hover:text-[#dce6f5]"}`}>{option}</button>)}
+            {(["Dinner"] as Meal[]).map((option) => <button key={option} onClick={() => { setMeal(option); setRefreshed(false); setPlanApplied(false); setStaffPlanApplied(false); }} className={`rounded-md px-3 py-1.5 text-[10px] font-medium mono transition-colors ${meal === option ? "bg-[#00c8ff] text-[#07111e]" : "text-[#5a7099] hover:text-[#dce6f5]"}`}>{option}</button>)}
           </div>
         </div>
       </Card>
@@ -183,7 +184,7 @@ export default function CrowdPrediction() {
           <Card>
             <div className="mb-3 flex items-center justify-between"><span className="text-xs font-semibold text-[#dce6f5]">Recommended preparation</span><ChevronDown size={14} className="text-[#5a7099]" /></div>
             <div className="space-y-3">
-              {[{ label: "Meals to prepare", value: `${Math.ceil(expectedCrowd * 1.08)} portions`, color: "text-[#a78bfa]" }, { label: "Counters to staff", value: capacityUse > 85 ? "2 counters" : "1 counter", color: "text-[#00c8ff]" }, { label: "Estimated wait", value: forecast.service, color: "text-[#00e676]" }].map((item) => <div key={item.label} className="flex items-center justify-between border-b border-[#1a254030] pb-2 last:border-0 last:pb-0"><span className="text-[10px] text-[#5a7099]">{item.label}</span><span className={`text-[10px] font-medium mono ${item.color}`}>{item.value}</span></div>)}
+              {[{ label: "Meals to prepare", value: `${Math.ceil(expectedCrowd * 1.08)} portions`, color: "text-[#a78bfa]" }, { label: "Counters to staff", value: capacityUse > 85 ? "2 counters" : "1 counter", color: "text-[#00c8ff]" }, { label: "Live queue wait", value: queueWait ? `~${queueWait} min` : "No active queue", color: "text-[#00e676]" }].map((item) => <div key={item.label} className="flex items-center justify-between border-b border-[#1a254030] pb-2 last:border-0 last:pb-0"><span className="text-[10px] text-[#5a7099]">{item.label}</span><span className={`text-[10px] font-medium mono ${item.color}`}>{item.value}</span></div>)}
             </div>
           </Card>
         </div>
