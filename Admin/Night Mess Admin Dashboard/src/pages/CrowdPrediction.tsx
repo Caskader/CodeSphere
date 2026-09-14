@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Area, AreaChart, CartesianGrid, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { AlertTriangle, BrainCircuit, CalendarDays, ChevronDown, Clock3, Sparkles, TrendingUp, Users } from "lucide-react";
+import { AlertTriangle, BrainCircuit, CalendarDays, ChevronDown, Clock3, PackageCheck, Sparkles, TrendingUp, UserRoundCheck, Users } from "lucide-react";
 import { Badge, Button, Card, PageHeader, StatCard } from "../components/ui";
 import { useStore } from "../store";
 
@@ -38,6 +38,43 @@ const historical = [
   { day: "Fri", crowd: 151 }, { day: "Sat", crowd: 104 }, { day: "Sun", crowd: 87 },
 ];
 
+const foodRecommendations: Record<Meal, { item: string; unit: string; pastDemand: number; predicted: number; buffer: number; available: number }[]> = {
+  Breakfast: [
+    { item: "Idli", unit: "pieces", pastDemand: 292, predicted: 318, buffer: 18, available: 360 },
+    { item: "Sambar", unit: "litres", pastDemand: 31, predicted: 34, buffer: 2, available: 40 },
+    { item: "Chutney", unit: "litres", pastDemand: 18, predicted: 20, buffer: 2, available: 25 },
+    { item: "Tea", unit: "litres", pastDemand: 47, predicted: 51, buffer: 3, available: 44 },
+  ],
+  Lunch: [
+    { item: "Jeera Rice", unit: "kg", pastDemand: 42, predicted: 47, buffer: 3, available: 38 },
+    { item: "Dal Tadka", unit: "litres", pastDemand: 56, predicted: 62, buffer: 4, available: 66 },
+    { item: "Paneer Curry", unit: "kg", pastDemand: 25, predicted: 28, buffer: 2, available: 22 },
+    { item: "Salad", unit: "kg", pastDemand: 19, predicted: 21, buffer: 2, available: 24 },
+  ],
+  Dinner: [
+    { item: "Dal Makhani", unit: "litres", pastDemand: 49, predicted: 55, buffer: 4, available: 45 },
+    { item: "Roti", unit: "pieces", pastDemand: 328, predicted: 370, buffer: 25, available: 200 },
+    { item: "Jeera Rice", unit: "kg", pastDemand: 32, predicted: 36, buffer: 3, available: 70 },
+    { item: "Raita", unit: "litres", pastDemand: 26, predicted: 29, buffer: 2, available: 90 },
+  ],
+};
+
+const counterPlans: Record<Meal, { counter: string; role: string; crowd: number; current: string[]; recommended: number }[]> = {
+  Breakfast: [
+    { counter: "Counter 1", role: "Idli & beverages", crowd: 54, current: ["Ramesh K.", "Anita S."], recommended: 2 },
+    { counter: "Counter 2", role: "Quick pickup", crowd: 40, current: ["Farhan A."], recommended: 1 },
+  ],
+  Lunch: [
+    { counter: "Counter 1", role: "Rice & main course", crowd: 76, current: ["Ramesh K.", "Anita S."], recommended: 2 },
+    { counter: "Counter 2", role: "Roti & sides", crowd: 62, current: ["Farhan A."], recommended: 2 },
+    { counter: "Counter 3", role: "Express pickup", crowd: 48, current: ["Meera P."], recommended: 1 },
+  ],
+  Dinner: [
+    { counter: "Counter 1", role: "Main course & rice", crowd: 82, current: ["Ramesh K.", "Anita S."], recommended: 2 },
+    { counter: "Counter 2", role: "Roti & express pickup", crowd: 60, current: ["Farhan A."], recommended: 2 },
+  ],
+};
+
 function ChartTip({ active, payload, label }: any) {
   if (!active || !payload?.length) return null;
   const predicted = payload.find((point: any) => point.dataKey === "forecast");
@@ -53,12 +90,19 @@ export default function CrowdPrediction() {
   const { state } = useStore();
   const [meal, setMeal] = useState<Meal>("Dinner");
   const [refreshed, setRefreshed] = useState(false);
+  const [planApplied, setPlanApplied] = useState(false);
+  const [staffPlanApplied, setStaffPlanApplied] = useState(false);
   const forecast = forecastByMeal[meal];
   const currentQueue = state.queue.filter((entry) => entry.status !== "done").length;
   const capacityUse = Math.round((forecast.peak / state.settings.maxCapacity) * 100);
   const status = capacityUse > 85 ? "High demand expected" : "Capacity looks healthy";
   const recommendation = capacityUse > 85 ? "Open counter 2 before the peak window" : "One counter can handle the predicted load";
   const forecastDate = useMemo(() => new Date().toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "short" }), []);
+  const foodPlan = foodRecommendations[meal];
+  const counterPlan = counterPlans[meal];
+  const restockCount = foodPlan.filter((item) => item.available < item.predicted + item.buffer).length;
+  const currentlyAllocated = counterPlan.reduce((total, counter) => total + counter.current.length, 0);
+  const recommendedStaff = counterPlan.reduce((total, counter) => total + counter.recommended, 0);
 
   return (
     <div className="space-y-5 animate-fade-up">
@@ -79,7 +123,7 @@ export default function CrowdPrediction() {
             </div>
           </div>
           <div className="flex items-center gap-2 rounded-lg border border-[#1a2540] bg-[#080d1a] p-1">
-            {(["Breakfast", "Lunch", "Dinner"] as Meal[]).map((option) => <button key={option} onClick={() => { setMeal(option); setRefreshed(false); }} className={`rounded-md px-3 py-1.5 text-[10px] font-medium mono transition-colors ${meal === option ? "bg-[#00c8ff] text-[#07111e]" : "text-[#5a7099] hover:text-[#dce6f5]"}`}>{option}</button>)}
+            {(["Breakfast", "Lunch", "Dinner"] as Meal[]).map((option) => <button key={option} onClick={() => { setMeal(option); setRefreshed(false); setPlanApplied(false); setStaffPlanApplied(false); }} className={`rounded-md px-3 py-1.5 text-[10px] font-medium mono transition-colors ${meal === option ? "bg-[#00c8ff] text-[#07111e]" : "text-[#5a7099] hover:text-[#dce6f5]"}`}>{option}</button>)}
           </div>
         </div>
       </Card>
@@ -129,6 +173,39 @@ export default function CrowdPrediction() {
           </Card>
         </div>
       </div>
+
+      <Card className="border-[#00e67635]">
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex items-start gap-2.5">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#00e67612] text-[#00e676]"><PackageCheck size={17} /></div>
+            <div><div className="text-xs font-semibold text-[#dce6f5]">Food quantity recommendation</div><p className="mt-0.5 text-[10px] leading-4 text-[#5a7099]">Suggested preparation for {meal.toLowerCase()}, calculated from the last 4 weeks of item-level demand and today’s crowd forecast.</p></div>
+          </div>
+          <Button variant={planApplied ? "success" : "outline"} size="sm" className="shrink-0" onClick={() => setPlanApplied(true)}>{planApplied ? "✓ Preparation plan applied" : "Apply to preparation plan"}</Button>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[620px] text-left">
+            <thead><tr className="border-b border-[#1a2540] text-[9px] uppercase tracking-wider text-[#3a4d6b] mono"><th className="px-3 py-2 font-medium">Food item</th><th className="px-3 py-2 font-medium">Past avg. demand</th><th className="px-3 py-2 font-medium">Forecast demand</th><th className="px-3 py-2 font-medium">Safety buffer</th><th className="px-3 py-2 font-medium">Prepare</th><th className="px-3 py-2 font-medium">Stock signal</th></tr></thead>
+            <tbody className="divide-y divide-[#1a254030]">{foodPlan.map((item) => { const quantity = item.predicted + item.buffer; const shortfall = Math.max(quantity - item.available, 0); return <tr key={item.item} className="hover:bg-[#1a254012]"><td className="px-3 py-3"><div className="text-xs font-medium text-[#dce6f5]">{item.item}</div><div className="mt-0.5 text-[9px] mono text-[#3a4d6b]">per {meal.toLowerCase()} service</div></td><td className="px-3 py-3 text-[11px] mono text-[#a0b4cc]">{item.pastDemand} {item.unit}</td><td className="px-3 py-3 text-[11px] mono text-[#a78bfa]">{item.predicted} {item.unit}</td><td className="px-3 py-3 text-[11px] mono text-[#00c8ff]">+{item.buffer} {item.unit}</td><td className="px-3 py-3"><span className="text-xs font-semibold text-[#00e676] mono">{quantity} {item.unit}</span></td><td className="px-3 py-3">{shortfall > 0 ? <Badge variant="warning" size="xs">ADD {shortfall} {item.unit}</Badge> : <Badge variant="success" size="xs">STOCK READY</Badge>}</td></tr>; })}</tbody>
+          </table>
+        </div>
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-[#080d1a] px-3 py-2.5"><span className="text-[10px] text-[#5a7099]">Forecast adds a 7–8% buffer to protect service levels without excess waste.</span>{restockCount > 0 ? <span className="text-[10px] mono text-[#ffb300]">{restockCount} item{restockCount > 1 ? "s" : ""} need restocking</span> : <span className="text-[10px] mono text-[#00e676]">All forecast quantities are in stock</span>}</div>
+      </Card>
+
+      <Card className="border-[#00c8ff35]">
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex items-start gap-2.5">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#00c8ff12] text-[#00c8ff]"><UserRoundCheck size={17} /></div>
+            <div><div className="text-xs font-semibold text-[#dce6f5]">Counter workforce allocation</div><p className="mt-0.5 text-[10px] leading-4 text-[#5a7099]">Staffing is balanced against the predicted crowd at each counter during the {forecast.peakTime} peak window.</p></div>
+          </div>
+          <Button variant={staffPlanApplied ? "success" : "outline"} size="sm" className="shrink-0" onClick={() => setStaffPlanApplied(true)}>{staffPlanApplied ? "✓ Staffing plan applied" : "Apply staffing plan"}</Button>
+        </div>
+        <div className="mb-4 grid grid-cols-1 gap-2 sm:grid-cols-3">
+          <div className="rounded-lg border border-[#1a2540] bg-[#080d1a] px-3 py-2.5"><div className="text-[9px] uppercase tracking-wider text-[#3a4d6b] mono">Current workforce</div><div className="mt-1 text-lg font-semibold text-[#00c8ff] mono">{currentlyAllocated} <span className="text-[10px] font-normal text-[#5a7099]">staff allocated</span></div></div>
+          <div className="rounded-lg border border-[#1a2540] bg-[#080d1a] px-3 py-2.5"><div className="text-[9px] uppercase tracking-wider text-[#3a4d6b] mono">Recommended workforce</div><div className="mt-1 text-lg font-semibold text-[#a78bfa] mono">{recommendedStaff} <span className="text-[10px] font-normal text-[#5a7099]">staff required</span></div></div>
+          <div className="rounded-lg border border-[#1a2540] bg-[#080d1a] px-3 py-2.5"><div className="text-[9px] uppercase tracking-wider text-[#3a4d6b] mono">Coverage status</div><div className={`mt-1 text-sm font-semibold ${currentlyAllocated >= recommendedStaff ? "text-[#00e676]" : "text-[#ffb300]"}`}>{currentlyAllocated >= recommendedStaff ? "Fully covered" : `${recommendedStaff - currentlyAllocated} staff short`}</div></div>
+        </div>
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">{counterPlan.map((counter) => { const gap = counter.recommended - counter.current.length; const load = Math.round(counter.crowd / forecast.peak * 100); return <div key={counter.counter} className={`rounded-xl border p-3 ${gap > 0 ? "border-[#ffb30035] bg-[#ffb30006]" : "border-[#1a2540] bg-[#080d1a]"}`}><div className="flex items-start justify-between gap-2"><div><div className="text-xs font-semibold text-[#dce6f5]">{counter.counter}</div><div className="mt-0.5 text-[10px] text-[#5a7099]">{counter.role}</div></div><Badge variant={gap > 0 ? "warning" : "success"} size="xs">{counter.crowd} PEOPLE</Badge></div><div className="mt-3"><div className="mb-1.5 flex justify-between text-[9px] mono text-[#5a7099]"><span>PEAK CROWD SHARE</span><span>{load}%</span></div><div className="h-1.5 overflow-hidden rounded-full bg-[#1a2540]"><div className={gap > 0 ? "h-full rounded-full bg-[#ffb300]" : "h-full rounded-full bg-[#00c8ff]"} style={{ width: `${load}%` }} /></div></div><div className="mt-3 border-t border-[#1a254030] pt-2.5"><div className="text-[9px] uppercase tracking-wider text-[#3a4d6b] mono">Currently allotted</div><div className="mt-1.5 flex flex-wrap gap-1.5">{counter.current.map((member) => <span key={member} className="rounded-md bg-[#1a2540] px-1.5 py-1 text-[9px] text-[#a0b4cc] mono">{member}</span>)}</div></div><div className="mt-3 flex items-center justify-between"><span className="text-[10px] text-[#5a7099]">Recommended team</span><span className={`text-[11px] font-semibold mono ${gap > 0 ? "text-[#ffb300]" : "text-[#00e676]"}`}>{counter.recommended} staff {gap > 0 ? `(add ${gap})` : "✓"}</span></div></div>; })}</div>
+      </Card>
 
       <Card>
         <div className="mb-4 flex items-center justify-between"><div><div className="text-xs font-semibold text-[#dce6f5]">Weekly demand pattern</div><div className="mt-0.5 text-[10px] text-[#5a7099]">Average dinner crowd from the last 7 corresponding days</div></div><Badge variant="muted" size="xs">HISTORICAL DATA</Badge></div>
