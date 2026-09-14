@@ -121,7 +121,7 @@ type Action =
   | { type: "UNPUBLISH_ANNOUNCEMENT"; announcementId: string }
   | { type: "ADD_ANNOUNCEMENT"; announcement: Omit<Announcement, "id" | "timestamp"> }
   | { type: "DELETE_ANNOUNCEMENT"; announcementId: string }
-  | { type: "ADD_FOOD"; food: Omit<FoodItem, "id"> }
+  | { type: "ADD_FOOD"; food: FoodItem }
   | { type: "EDIT_FOOD"; food: FoodItem }
   | { type: "DELETE_FOOD"; foodId: string }
   | { type: "UPDATE_STOCK"; foodId: string; stock: number }
@@ -369,7 +369,7 @@ function reducer(state: AppState, action: Action): AppState {
     case "ADD_FOOD":
       return {
         ...state,
-        foodItems: [...state.foodItems, { ...action.food, id: "FOOD" + generateId() }],
+        foodItems: [...state.foodItems, action.food],
       };
     case "EDIT_FOOD":
       return {
@@ -445,6 +445,9 @@ function reducer(state: AppState, action: Action): AppState {
 }
 
 const STORAGE_KEY = "night-mess-admin-v1";
+const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
+// Set VITE_ADMIN_TOKEN in .env for deployments instead of using the demo token.
+const ADMIN_TOKEN = import.meta.env.VITE_ADMIN_TOKEN || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1aWQiOiJhZG1pbiIsImVtYWlsIjoiYWRtaW5Adml0LmFjLmluIiwiaXNfYWRtaW4iOnRydWUsIm5hbWUiOiJBZG1pbiIsImV4cCI6MTgyMDkyNTM1MX0.bSafq0-bKWIsnzoO40t_nA1BELUzt99cuWuxfvbzzQY";
 
 function loadState(): AppState {
   try {
@@ -457,6 +460,8 @@ function loadState(): AppState {
 interface StoreContextValue {
   state: AppState;
   dispatch: React.Dispatch<Action>;
+  createFoodItem: (food: Omit<FoodItem, "id">) => Promise<boolean>;
+  updateOrderStatus: (orderId: string, status: "preparing" | "completed" | "cancelled", rejectionReason?: string) => Promise<boolean>;
   verifyQR: (tokenId: string) => { status: QRStatus; order?: Order; message: string };
   sendNotification: (message: string) => void;
 }
@@ -465,6 +470,56 @@ const StoreContext = createContext<StoreContextValue | null>(null);
 
 export function StoreProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(reducer, undefined, loadState);
+
+  const createFoodItem = async (food: Omit<FoodItem, "id">): Promise<boolean> => {
+    try {
+      const res = await fetch(`${API_BASE}/menu`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${ADMIN_TOKEN}` },
+        body: JSON.stringify({
+          ...food,
+          is_available: food.availability !== "unavailable",
+        }),
+      });
+      if (!res.ok) {
+        console.error("Failed to create menu item", await res.json().catch(() => ({})));
+        return false;
+      }
+
+      const data = await res.json();
+      dispatch({ type: "ADD_FOOD", food: { ...food, id: data.id } });
+      return true;
+    } catch (err) {
+      console.error("Failed to create menu item", err);
+      return false;
+    }
+  };
+
+  const updateOrderStatus = async (
+    orderId: string,
+    status: "preparing" | "completed" | "cancelled",
+    rejectionReason?: string,
+  ): Promise<boolean> => {
+    try {
+      const res = await fetch(`${API_BASE}/orders/${orderId}/status`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${ADMIN_TOKEN}` },
+        body: JSON.stringify({ status }),
+      });
+      if (!res.ok) {
+        console.error("Failed to update order status", await res.json().catch(() => ({})));
+        return false;
+      }
+
+      if (status === "preparing") dispatch({ type: "ACCEPT_ORDER", orderId });
+      if (status === "completed") dispatch({ type: "MARK_COLLECTED", orderId });
+      if (status === "cancelled") dispatch({ type: "REJECT_ORDER", orderId, reason: rejectionReason || "Rejected by admin" });
+      return true;
+    } catch (err) {
+      console.error("Failed to update order status", err);
+      return false;
+    }
+  };
 
   useEffect(() => {
     try {
@@ -475,9 +530,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const fetchOrders = async () => {
       try {
-        const token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1aWQiOiJhZG1pbiIsImVtYWlsIjoiYWRtaW5Adml0LmFjLmluIiwiaXNfYWRtaW4iOnRydWUsIm5hbWUiOiJBZG1pbiIsImV4cCI6MTgyMDkyNTM1MX0.bSafq0-bKWIsnzoO40t_nA1BELUzt99cuWuxfvbzzQY";
-        const res = await fetch("http://localhost:5000/api/orders", {
-          headers: { Authorization: `Bearer ${token}` }
+        const res = await fetch(`${API_BASE}/orders`, {
+          headers: { Authorization: `Bearer ${ADMIN_TOKEN}` }
         });
         if (res.ok) {
           const data = await res.json();
@@ -550,7 +604,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <StoreContext.Provider value={{ state, dispatch, verifyQR, sendNotification }}>
+    <StoreContext.Provider value={{ state, dispatch, createFoodItem, updateOrderStatus, verifyQR, sendNotification }}>
       {children}
     </StoreContext.Provider>
   );
