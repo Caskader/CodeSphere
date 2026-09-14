@@ -16,7 +16,8 @@ from the client, so people can't tamper with totals.
 
 from flask import Blueprint, request, jsonify
 from firebase_admin import firestore
-from firebase_config import db
+from firebase_config import db, firestore_db
+from realtime_store import realtime_transactional
 from utils.auth_middleware import token_required, admin_required
 
 order_bp = Blueprint("orders", __name__, url_prefix="/api/orders")
@@ -87,7 +88,7 @@ def place_order():
                     material_requirements[material_id] = material_requirements.get(material_id, 0) + required_quantity * quantity
 
     # Pull student profile for room/block (helps mess staff with delivery)
-    profile_doc = db.collection("users").document(uid).get()
+    profile_doc = firestore_db.collection("users").document(uid).get()
     profile = profile_doc.to_dict() if profile_doc.exists else {}
 
     order = {
@@ -103,7 +104,7 @@ def place_order():
     ref = db.collection("orders").document()
     transaction = db.transaction()
 
-    @firestore.transactional
+    @realtime_transactional if type(db).__name__ == "RealtimeDatabase" else firestore.transactional
     def reserve_inventory_and_create_order(transaction):
         material_updates = []
         dish_updates = []

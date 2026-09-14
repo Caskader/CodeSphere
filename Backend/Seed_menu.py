@@ -1,16 +1,19 @@
-"""
-One-off script to bulk-seed menu_items into Firestore.
-Run from the Backend/ folder:  python Seed_menu.py
+"""Replace the disposable RTDB menu and inventory with development defaults.
+
+Run from Backend/:  ../.venv/bin/python Seed_menu.py
+The script deliberately refuses to run unless FIREBASE_USE_REALTIME_DB=true,
+so it cannot accidentally erase the old Firestore menu.
 """
 
-import firebase_admin
-from firebase_admin import credentials, firestore
-import os
+from firebase_admin import firestore
 
-if not firebase_admin._apps:
-    cred = credentials.Certificate("serviceAccountKey.json")
-    firebase_admin.initialize_app(cred)
-db = firestore.client()
+from firebase_config import db
+
+
+if type(db).__name__ != "RealtimeDatabase":
+    raise SystemExit(
+        "Set FIREBASE_USE_REALTIME_DB=true in .env before seeding Realtime Database"
+    )
 
 menu_items = [
     {
@@ -147,11 +150,29 @@ menu_items = [
     },
 ]
 
-# Delete old items first to prevent duplicates
+raw_materials = [
+    {"id": "bread", "name": "Bread", "quantity": 100, "unit": "slices"},
+    {"id": "tomato", "name": "Tomato", "quantity": 100, "unit": "pieces"},
+    {"id": "potato", "name": "Potato", "quantity": 30, "unit": "kg"},
+    {"id": "pasta", "name": "Pasta", "quantity": 15, "unit": "kg"},
+    {"id": "carrot", "name": "Carrot", "quantity": 15, "unit": "kg"},
+    {"id": "cheese", "name": "Cheese", "quantity": 10, "unit": "kg"},
+    {"id": "rice", "name": "Rice", "quantity": 50, "unit": "kg"},
+    {"id": "onion", "name": "Onion", "quantity": 25, "unit": "kg"},
+    {"id": "paneer", "name": "Paneer", "quantity": 12, "unit": "kg"},
+    {"id": "lentils", "name": "Lentils", "quantity": 25, "unit": "kg"},
+    {"id": "flour", "name": "Flour", "quantity": 40, "unit": "kg"},
+    {"id": "oil", "name": "Oil", "quantity": 20, "unit": "litres"},
+]
+
+# Replace only disposable RTDB menu and material records to prevent duplicates.
 old_docs = list(db.collection("menu_items").stream())
 for doc in old_docs:
     db.collection("menu_items").document(doc.id).delete()
-print(f"Cleared {len(old_docs)} old menu items.")
+old_materials = list(db.collection("raw_materials").stream())
+for doc in old_materials:
+    db.collection("raw_materials").document(doc.id).delete()
+print(f"Cleared {len(old_docs)} menu items and {len(old_materials)} raw materials.")
 
 for item in menu_items:
     item["created_at"] = firestore.SERVER_TIMESTAMP
@@ -160,4 +181,12 @@ for item in menu_items:
     ref.set(item)
     print(f"Added: {item['name']} ({ref.id})")
 
-print(f"\nDone — seeded {len(menu_items)} items into Firestore.")
+for material in raw_materials:
+    material_id = material.pop("id")
+    material["updated_at"] = firestore.SERVER_TIMESTAMP
+    db.collection("raw_materials").document(material_id).set(material)
+
+print(
+    f"\nDone — seeded {len(menu_items)} menu items and "
+    f"{len(raw_materials)} raw materials into Realtime Database."
+)

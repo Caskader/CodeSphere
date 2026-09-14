@@ -14,7 +14,18 @@ SERVICE_ACCOUNT_PATH = os.getenv("FIREBASE_SERVICE_ACCOUNT_PATH", "serviceAccoun
 
 if not firebase_admin._apps:
     cred = credentials.Certificate(SERVICE_ACCOUNT_PATH)
-    firebase_admin.initialize_app(cred)
+    options = {}
+    database_url = os.getenv("FIREBASE_DATABASE_URL")
+    if database_url:
+        options["databaseURL"] = database_url
+    firebase_admin.initialize_app(cred, options)
 
-db = firestore.client()
+firestore_db = firestore.client()
+if os.getenv("FIREBASE_USE_REALTIME_DB", "false").lower() == "true":
+    import sys
+    sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "Backend")))
+    from realtime_store import RealtimeDatabase
+    db = RealtimeDatabase()
+else:
+    db = firestore_db
 firebase_auth = auth  # re-exported so routes can do `from firebase_config import firebase_auth`

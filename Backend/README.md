@@ -26,6 +26,31 @@ cp .env.example .env            # then fill in the values
 python app.py                   # runs on http://localhost:5000
 ```
 
+### Moving all app data to Realtime Database
+
+Set `FIREBASE_DATABASE_URL` in `.env`, run the one-time migration while the
+switch is off, then enable `FIREBASE_USE_REALTIME_DB=true` and restart Flask:
+
+```bash
+FIREBASE_USE_REALTIME_DB=false python migrate_hot_data_to_rtdb.py
+FIREBASE_USE_REALTIME_DB=true python app.py
+```
+
+The migration recursively copies every Firestore collection and subcollection,
+including `menu_items`, `orders`, `raw_materials`, `users`, and menu-item
+reviews. After the switch, the API reads and writes these records in Realtime
+Database. Firebase Authentication remains unchanged.
+
+### Seed a new/disposable Realtime Database
+
+To replace the RTDB menu and raw-material inventory with the bundled
+development defaults (12 menu items and 12 materials), enable the RTDB switch
+and run:
+
+```bash
+../.venv/bin/python Seed_menu.py
+```
+
 ## 3. Make your first admin (mess staff)
 
 There's a chicken-and-egg problem: `make-admin` requires an admin token.
